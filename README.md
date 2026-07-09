@@ -1,5 +1,5 @@
 # HadNet-HadDNN-Decomposition
-Tensor Decomposition and Neural Architectures through Generalized Hadamard Products
+Tensor Decomposition and Neural Architectures through Generalized Hadamard Products [[Link](https://doi.org/10.1016/j.neucom.2026.134372)]
 
 If you use [Hadamard_BCD](https://github.com/WertzSamuel/HadamardDecompositions) file/function in your work, please cite:
 ```bibtex
@@ -27,3 +27,18 @@ If you use [alternating_gradient_descent](https://github.com/maciap/HadamardDeco
 ```
 
 
+
+## BibTeX
+``` bash
+@article{PANCHAL2026134372,
+title = {Tensor decomposition and neural architectures through generalized Hadamard products},
+journal = {Neurocomputing},
+volume = {699},
+pages = {134372},
+year = {2026},
+issn = {0925-2312},
+doi = {https://doi.org/10.1016/j.neucom.2026.134372},
+url = {https://www.sciencedirect.com/science/article/pii/S0925231226017704},
+author = {Aneesh Panchal and Jajati Keshari Sahoo and Ratikanta Behera},
+}
+```
