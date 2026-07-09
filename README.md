@@ -18,18 +18,20 @@ If you use [Hadamard_BCD](https://github.com/WertzSamuel/HadamardDecompositions)
 
 If you use [alternating_gradient_descent](https://github.com/maciap/HadamardDecomposition) file/function in your work, please cite: 
 ```bibtex
-@article{wertz2025efficient,
-  title={Efficient algorithms for the Hadamard decomposition},
+@inproceedings{wertz2025efficient,
+  title={Efficient algorithms for the hadamard decomposition},
   author={Wertz, Samuel and Vandaele, Arnaud and Gillis, Nicolas},
-  journal={arXiv preprint arXiv:2504.13633},
-  year={2025}
+  booktitle={2025 IEEE 35th International Workshop on Machine Learning for Signal Processing (MLSP)},
+  pages={1--6},
+  year={2025},
+  organization={IEEE}
 }
 ```
 
 
 
 ## BibTeX
-``` bash
+```bibtex
 @article{PANCHAL2026134372,
 title = {Tensor decomposition and neural architectures through generalized Hadamard products},
 journal = {Neurocomputing},
