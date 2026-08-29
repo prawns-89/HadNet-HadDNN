@@ -7,6 +7,12 @@ from scipy.linalg import qr
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# --- perf: shared early-stopping (see docs/DECISIONS.md) ---
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+from hadamard_ops import EarlyStop
+
+
 def qr_decomp(X, r):
     if isinstance(X, np.ndarray):
         X_np = X
@@ -66,18 +72,31 @@ def igd(D, r, max_iter):
     return U1, U2, V1, V2
 
 
-def svd_init(X, r):
-    """Simple SVD-based initialization"""
+def svd_init(X, r, randomized=True, niter=24):
+    """SVD-based initialization.
+
+    randomized=True computes only the leading r directions instead of all
+    min(m,n), dropping the cost from O(mn*min(m,n)) to O(mn*r). niter=24
+    follows Shard's stability setting for torch.svd_lowrank.
+    """
     M = np.sqrt(np.abs(X))
     M_signed = M * np.sign(X)
     
     # First factor from M
-    U1, S1, V1 = np.linalg.svd(M, full_matrices=False)
+    if randomized and r < min(M.shape) // 2:
+        from sklearn.utils.extmath import randomized_svd as _rsvd
+        U1, S1, V1 = _rsvd(M, n_components=r, n_iter=niter, random_state=42)
+    else:
+        U1, S1, V1 = np.linalg.svd(M, full_matrices=False)
     W1 = U1[:, :r] * np.sqrt(S1[:r])
     H1 = (np.sqrt(S1[:r]) * V1[:r, :].T).T
     
     # Second factor from M_signed  
-    U2, S2, V2 = np.linalg.svd(M_signed, full_matrices=False)
+    if randomized and r < min(M_signed.shape) // 2:
+        from sklearn.utils.extmath import randomized_svd as _rsvd
+        U2, S2, V2 = _rsvd(M_signed, n_components=r, n_iter=niter, random_state=42)
+    else:
+        U2, S2, V2 = np.linalg.svd(M_signed, full_matrices=False)
     W2 = U2[:, :r] * np.sqrt(S2[:r])
     H2 = (np.sqrt(S2[:r]) * V2[:r, :].T).T
     
@@ -106,6 +125,7 @@ def train_Net(D, r, max_epochs=10000):
     X = torch.tensor(D, dtype=torch.float32)
     model = SimpleHadamardNet(D, r)
     opt = optim.Adam([model.W1, model.H1, model.W2, model.H2], lr=0.01)
+    stopper = EarlyStop(patience=50, min_rel=1e-3)
     start = time.time()
     
     for epoch in range(1, max_epochs + 1):
@@ -114,6 +134,8 @@ def train_Net(D, r, max_epochs=10000):
         loss = torch.norm(X - X_hat) ** 2
         loss.backward()
         opt.step()
+        if stopper.step(loss.item()):
+            break
 
         if loss.item() < best_err:
             best_err = loss.item()
@@ -168,7 +190,8 @@ class FactorNet(nn.Module):
         return self.net(x)
 
 class HadamardDNN(nn.Module):
-    def __init__(self, X, r, device='cuda'):
+    def __init__(self, X, r, device=None):
+        device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         super().__init__()
         m, n = X.shape
         self.m, self.n, self.r = m, n, r
@@ -202,7 +225,8 @@ class HadamardDNN(nn.Module):
 
         return X_base
 
-def train_DNN(D, r, max_epochs=10000, device='cuda'):
+def train_DNN(D, r, max_epochs=10000, device=None):
+    device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     X = torch.tensor(D, dtype=torch.float32, device=device)
     model = HadamardDNN(D, r, device=device).to(device)
 
@@ -213,6 +237,8 @@ def train_DNN(D, r, max_epochs=10000, device='cuda'):
                         list(model.H2_net.parameters())
 
     opt = optim.Adam(params_phase1, lr=0.01)
+
+    stopper = EarlyStop(patience=50, min_rel=1e-3)
     wait = 100
     best_err = float('inf')
     start = time.time()
@@ -222,6 +248,8 @@ def train_DNN(D, r, max_epochs=10000, device='cuda'):
         loss = torch.norm(X - X_hat) ** 2
         loss.backward()
         opt.step()
+        if stopper.step(loss.item()):
+            break
         
         if loss.item() < best_err:
             best_err = loss.item()

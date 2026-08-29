@@ -13,6 +13,13 @@ from Hadamard_matrix import igd
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# --- perf: shared optimised kernels (see hadamard_ops.py, docs/DECISIONS.md) ---
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+from hadamard_ops import h_prod, svd_initialize, sync, EarlyStop
+# --- end perf shim ---
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def svd_transform(D, r):
@@ -33,42 +40,7 @@ def qr_transform(D, r):
     D_approx = torch.tensor(D_approx, dtype=torch.float32, device=device)
     return D_approx
 
-def svd_initialize(D, r):
-    device = D.device
-    shape = D.shape
-    m, n = shape[0], shape[1]
-    p = shape[2:]
-    out_W = (m,r) + p
-    out_H = (r,n) + p
-    W1 = torch.zeros(out_W, device=device)
-    H1 = torch.zeros(out_H, device=device)
-    W2 = torch.zeros(out_W, device=device)
-    H2 = torch.zeros(out_H, device=device)
 
-    for i in itertools.product(*[range(s) for s in p]):
-        mat = D[(...,)+i]
-        mat_simple = torch.sqrt(torch.abs(mat))
-        mat_signed = mat_simple * torch.sign(mat)
-
-        U1, S1, V1 = torch.linalg.svd(mat_simple, full_matrices=False)
-        W1[(...,)+i] = U1[:, :r] * torch.sqrt(S1[:r])
-        H1[(...,)+i] = (torch.sqrt(S1[:r]) * V1[:r, :].T).T
-
-        U2, S2, V2 = torch.linalg.svd(mat_signed, full_matrices=False)
-        W2[(...,)+i] = U2[:, :r] * torch.sqrt(S2[:r])
-        H2[(...,)+i] = (torch.sqrt(S2[:r]) * V2[:r, :].T).T
-    return W1, H1, W2, H2
-
-def h_prod(A, B):
-    shapeA = A.shape
-    shapeB = B.shape
-    m, _, p = shapeA[0], shapeA[1], shapeA[2:]
-    _, n, p = shapeB[0], shapeB[1], shapeB[2:]
-    outdim = (m,n) + p
-    C = torch.empty(outdim, dtype=A.dtype, device=A.device)
-    for i in itertools.product(*[range(s) for s in p]):
-        C[(...,)+i] = torch.matmul(A[(...,)+i], B[(...,)+i])
-    return C
 
 class HadamardNet(nn.Module):
     def __init__(self, X, r):
@@ -93,12 +65,15 @@ def HadamardNet_train(D, r, max_epochs=2000):
     D = torch.tensor(D, dtype=torch.float32, device=device)
     model = HadamardNet(D, r)
     opt = optim.Adam(model.parameters(), lr=0.1)
+    stopper = EarlyStop(patience=50, min_rel=1e-3)
     for epoch in range(1, max_epochs + 1):
         opt.zero_grad()
         X_hat = model()
         loss = torch.norm(D - X_hat, 'fro')
         loss.backward()
         opt.step()
+        if stopper.step(loss.item()):
+            break
         hist.append(loss.item())
 
         # if epoch % 100 == 0:
@@ -203,7 +178,9 @@ class HadamardDNN(nn.Module):
         else:
             return X_pred
 
-def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device='cuda'):
+def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device=None):
+    # perf: was hardcoded 'cuda', which crashes on CPU-only builds
+    device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = torch.device(device)
     D = D.to(device)
     model = HadamardDNN(D, r, device=device, use_factor_nets=use_factor_nets).to(device)
@@ -214,6 +191,8 @@ def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device='cuda'
         params = [model.W1, model.H1, model.W2, model.H2]
 
     opt = optim.Adam(params, lr=0.1)
+
+    stopper = EarlyStop(patience=50, min_rel=1e-3)
     wait = 100
     best_err = float('inf')
     for epoch in range(1, max_epochs + 1):
@@ -222,6 +201,8 @@ def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device='cuda'
         loss = torch.norm(D - X_hat, p='fro')
         loss.backward()
         opt.step()
+        if stopper.step(loss.item()):
+            break
 
         # if epoch % 100 == 0:
         #     print(f"Epoch {epoch:4d} | Loss: {loss.item():.6f}")
@@ -295,6 +276,7 @@ if __name__ == "__main__":
         maxIter = 40000
 
         # Benchmark TAGD
+        sync()
         start = time.time()
         agd_A1 = torch.zeros((n1, rank) + remShape, dtype=torch.float32)
         agd_B1 = torch.zeros((rank, n2) + remShape, dtype=torch.float32)
@@ -309,6 +291,7 @@ if __name__ == "__main__":
         M1 = h_prod(agd_A1, agd_B1)
         M2 = h_prod(agd_A2, agd_B2)
         A_AGD = M1 * M2
+        sync()
         end = time.time()
         err_AGD = torch.norm(A - A_AGD, 'fro').item()
         print(f"\nReconstruction error Tensor AGD: {err_AGD:.6f}")
@@ -316,6 +299,7 @@ if __name__ == "__main__":
         print(f"Tensor AGD time: {end - start:.5f} seconds")
 
         # Benchmark TIGD
+        sync()
         start = time.time()
         igd_A1 = torch.zeros((n1, rank) + remShape, dtype=torch.float32)
         igd_B1 = torch.zeros((rank, n2) + remShape, dtype=torch.float32)
@@ -329,6 +313,7 @@ if __name__ == "__main__":
         M1 = h_prod(igd_A1, igd_B1)
         M2 = h_prod(igd_A2, igd_B2)
         A_IGD = M1 * M2
+        sync()
         end = time.time()
         err_IGD = torch.norm(A - A_IGD, 'fro').item()
         print(f"\nReconstruction error Tensor IGD: {err_IGD:.6f}")
@@ -336,6 +321,7 @@ if __name__ == "__main__":
         print(f"Tensor IGD time: {end - start:.5f} seconds")
 
         # Benchmark TBCD
+        sync()
         start = time.time()
         bcd_A1, bcd_B1 = torch.zeros((n1, rank) + remShape, dtype=torch.float32), torch.zeros((rank, n2) + remShape, dtype=torch.float32)
         bcd_A2, bcd_B2 = torch.zeros((n1, rank) + remShape, dtype=torch.float32), torch.zeros((rank, n2) + remShape, dtype=torch.float32)
@@ -349,6 +335,7 @@ if __name__ == "__main__":
         M1 = h_prod(bcd_A1, bcd_B1)
         M2 = h_prod(bcd_A2, bcd_B2)
         A_BCD = M1 * M2
+        sync()
         end = time.time()
         err_BCD = torch.norm(A - A_BCD, 'fro').item()
         print(f"\nReconstruction error Tensor BCD: {err_BCD:.6f}")
@@ -357,6 +344,7 @@ if __name__ == "__main__":
 
 
         # HadamardNet
+        sync()
         start = time.time()
         W1, H1, W2, H2 = HadamardNet_train(A, rank)
         # print("Sizes: ", W1.shape, H1.shape, W2.shape, H2.shape)
@@ -369,6 +357,7 @@ if __name__ == "__main__":
         print(f"nD-Tensor HadamardNet time: {time.time() - start:.5f} seconds")
         
         # HadamardDNN
+        sync()
         start = time.time()
         W1, H1, W2, H2 = HadamardDNN_train(A, rank)
         M1 = h_prod(torch.tensor(W1), torch.tensor(H1))

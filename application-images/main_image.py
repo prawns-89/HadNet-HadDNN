@@ -19,16 +19,16 @@ import numpy as np
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
+# --- perf: shared optimised kernels (see hadamard_ops.py, docs/DECISIONS.md) ---
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+from hadamard_ops import h_prod, svd_initialize, sync, EarlyStop
+# --- end perf shim ---
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def h_prod(A, B):
-    m, r, p = A.shape
-    r, n, p_ = B.shape
-    out = torch.empty(m, n, p, device=device)
-    for i in range(p):
-        out[..., i] = torch.matmul(A[..., i], B[..., i])
-    return out
 
 def slice_wise_svd_transform(D, r):
     device = D.device
@@ -58,24 +58,6 @@ def slice_wise_qr_transform(D, r):
     return torch.tensor(D_approx, dtype=torch.float32, device=device)
 
 
-def svd_initialize(D, r):
-    device = D.device
-    m, n, p = D.shape    
-    r = min(r, min(m, n))
-    W1 = torch.zeros(m, r, p, device=device)
-    H1 = torch.zeros(r, n, p, device=device)
-    W2 = torch.zeros(m, r, p, device=device)
-    H2 = torch.zeros(r, n, p, device=device)
-    for i in range(p):
-        M_simple = torch.sqrt(torch.abs(D[:, :, i]))
-        M_signed = M_simple * torch.sign(D[:, :, i])
-        U1, S1, V1 = torch.linalg.svd(M_simple, full_matrices=False)
-        W1[:, :, i] = U1[:, :r] * torch.sqrt(S1[:r])
-        H1[:, :, i] = (torch.sqrt(S1[:r]) * V1[:r, :].T).T
-        U2, S2, V2 = torch.linalg.svd(M_signed, full_matrices=False)
-        W2[:, :, i] = U2[:, :r] * torch.sqrt(S2[:r])
-        H2[:, :, i] = (torch.sqrt(S2[:r]) * V2[:r, :].T).T
-    return W1, H1, W2, H2
 
 
 
@@ -104,12 +86,15 @@ def HadamardNet_train(D, r, max_epochs=2000):
     D = torch.tensor(D, dtype=torch.float32, device=device)
     model = HadamardNet(D, r)
     opt = optim.Adam(model.parameters(), lr=0.1)
+    stopper = EarlyStop(patience=50, min_rel=1e-3)
     for epoch in range(1, max_epochs + 1):
         opt.zero_grad()
         X_hat = model()
         loss = torch.norm(D - X_hat, 'fro')
         loss.backward()
         opt.step()
+        if stopper.step(loss.item()):
+            break
 
         if loss.item() < best_err:
             best_err = loss.item()
@@ -208,7 +193,9 @@ class HadamardDNN(nn.Module):
         else:
             return X_pred
 
-def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device='cuda'):
+def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device=None):
+    # perf: was hardcoded 'cuda', which crashes on CPU-only builds
+    device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = torch.device(device)
     D_tensor = D if isinstance(D, torch.Tensor) else torch.tensor(D, dtype=torch.float32, device=device)
     model = HadamardDNN(D_tensor, r, device=device, use_factor_nets=use_factor_nets).to(device)
@@ -219,6 +206,8 @@ def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device='cuda'
         params = [model.W1, model.H1, model.W2, model.H2]
 
     opt = optim.Adam(params, lr=0.1)
+
+    stopper = EarlyStop(patience=50, min_rel=1e-3)
     wait = 100
     best_err = float('inf')
     for epoch in range(1, max_epochs + 1):
@@ -227,6 +216,8 @@ def HadamardDNN_train(D, r, max_epochs=2000, use_factor_nets=True, device='cuda'
         loss = torch.norm(D_tensor - X_hat, p='fro')
         loss.backward()
         opt.step()
+        if stopper.step(loss.item()):
+            break
 
         if loss.item() < best_err:
             best_err = loss.item()
@@ -281,8 +272,10 @@ for rank in ranks:
     m,n,p = D.shape
 
     # Benchmark Tensor SVD
+    sync()
     start = time.time()
     X_svd = slice_wise_svd_transform(D, rank)
+    sync()
     end = time.time()
     err_svd = torch.norm(D - X_svd, 'fro').item()
     result['SVD'] = {
@@ -305,8 +298,10 @@ for rank in ranks:
 
 
     # Benchmark Tensor QR
+    sync()
     start = time.time()
     X_qr = slice_wise_qr_transform(D, rank)
+    sync()
     end = time.time()
     err_qr = torch.norm(D - X_qr, 'fro').item()
     result['QR'] = {
@@ -342,6 +337,7 @@ for rank in ranks:
     M1 = h_prod(A1, B1)
     M2 = h_prod(A2, B2)
     D_AGD = M1 * M2
+    sync()
     end = time.time()
     err_AGD = torch.norm(D - D_AGD, 'fro').item()
     result['AGD'] = {
@@ -364,6 +360,7 @@ for rank in ranks:
 
 
     # Benchmark IGD
+    sync()
     start = time.time()
     A1, B1 = torch.zeros((m, rank, p), dtype=torch.float32, device=device), torch.zeros((rank, n, p), dtype=torch.float32, device=device)
     A2, B2 = torch.zeros((m, rank, p), dtype=torch.float32, device=device), torch.zeros((rank, n, p), dtype=torch.float32, device=device)
@@ -373,6 +370,7 @@ for rank in ranks:
     M1 = h_prod(A1, B1)
     M2 = h_prod(A2, B2)
     D_IGD = M1 * M2
+    sync()
     end = time.time()
     err_IGD = torch.norm(D - D_IGD, 'fro').item()
     result['IGD'] = {
@@ -395,6 +393,7 @@ for rank in ranks:
     
 
     # Benchmark BCD
+    sync()
     start = time.time()
     A1, B1 = np.zeros((m, rank, p), dtype=np.float32), np.zeros((rank, n, p), dtype=np.float32)
     A2, B2 = np.zeros((m, rank, p), dtype=np.float32), np.zeros((rank, n, p), dtype=np.float32)
@@ -406,6 +405,7 @@ for rank in ranks:
     M1 = h_prod(A1, B1)
     M2 = h_prod(A2, B2)
     D_HBCD = M1 * M2
+    sync()
     end = time.time()
     err_HBCD = torch.norm(D - D_HBCD, 'fro').item()
     result['HBCD'] = {
@@ -428,11 +428,13 @@ for rank in ranks:
 
 
     # HadamardNet
+    sync()
     start = time.time()
     W1_hm, H1_hm, W2_hm, H2_hm = HadamardNet_train(D.cpu().numpy(), rank)
     M1_hm = h_prod(W1_hm.to(device), H1_hm.to(device))
     M2_hm = h_prod(W2_hm.to(device), H2_hm.to(device))
     X_hm = M1_hm * M2_hm
+    sync()
     end = time.time()
     err_hm = torch.norm(D - X_hm, 'fro').item()
     result['HadamardNet'] = {
@@ -455,11 +457,13 @@ for rank in ranks:
 
 
     # HadamardDNN
+    sync()
     start = time.time()
     W1_hd, H1_hd, W2_hd, H2_hd = HadamardDNN_train(D.cpu().numpy(), rank, use_factor_nets=True, device=device)
     M1_hd = h_prod(W1_hd.to(device), H1_hd.to(device))
     M2_hd = h_prod(W2_hd.to(device), H2_hd.to(device))
     X_hd = M1_hd * M2_hd
+    sync()
     end = time.time()
     err_hd = torch.norm(D - X_hd, 'fro').item()
     result['HadamardDNN'] = {
