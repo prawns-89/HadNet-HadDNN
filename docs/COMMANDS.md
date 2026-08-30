@@ -1,133 +1,142 @@
 # Command reference
 
-Every command needed to set up, diagnose and run this repo, with what each one
-actually does. GPU commands are explained in detail — that is where the
-surprises live.
+GPU/CUDA lives in **[GPU.md](GPU.md)**. Research directions in
+**[RESEARCH.md](RESEARCH.md)**. Findings and measurements in
+**[DECISIONS.md](DECISIONS.md)**.
 
-Repo root: `/home/prawns/SOP/HadNet-HadDNN`
-
----
-
-## 1. Environment
-
-Ubuntu 24.04 enforces **PEP 668**: system Python is "externally managed" and
-`pip install` is refused outright. 91 apt-managed Python packages live in the
-system interpreter — `apt` itself among them — so pip and dpkg fighting over
-`/usr/lib/python3/dist-packages` can break OS tooling. Hence a venv.
-
-```bash
-python3 -m venv .venv                     # isolated interpreter + site-packages
-.venv/bin/pip install --upgrade pip
-.venv/bin/pip install -r requirements.txt
-```
-
-No `activate` needed — call the interpreter directly:
-
-```bash
-.venv/bin/python tests/test_ops.py
-```
-
-`requirements.txt` was derived from the repo's actual imports; upstream ships
-none.
+Repo root: `/home/prawns/SOP/HadNet-HadDNN`. Everything below assumes it.
 
 ---
 
-## 2. GPU / CUDA
+## 1. Setup (once)
 
-Moved to **[GPU.md](GPU.md)** — driver diagnosis, CUDA wheels, disk
-requirements, async-timing correctness, and outstanding GPU work.
+Ubuntu 24.04 enforces PEP 668, so system `pip install` is refused; 91
+apt-managed Python packages share that interpreter, `apt` among them. Hence a
+venv. No `activate` needed anywhere — call the interpreter directly, which also
+avoids stale-shell problems.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt          # CPU torch
+```
+
+For GPU, install the CUDA wheel instead — see [GPU.md](GPU.md) §3.
 
 ---
 
-## 3. Running the experiments
+## 2. Running a model — the one pattern
 
-**No argparse anywhere** — every setting is hardcoded, so edit then run. Each
-script uses relative data paths, so `cd` into its folder first.
-
-| Folder | Run | Edit |
-|---|---|---|
-| `random-tensor` | `main.py` | `ranks` (L258) |
-| `real-world` | `main.py` | `dataset_name` L48 (`miserables`/`spectrometer`), `ranks` L59 |
-| `application-images` | `main_image.py` | `name_` L255 (`mri`/`cat`/`flower`/`monalisa`), `ranks` L265 |
-| `application-videos` | `main_video.py` | `video_path` L262, `ranks` L284 |
+**All four experiment folders work identically.** There is no argparse
+anywhere, so the loop is always: *edit the constants at the bottom of the
+script, then run it from inside its own folder* (the data paths are relative).
 
 ```bash
-cd application-videos && ../.venv/bin/python main_video.py
+cd <folder> && ../.venv/bin/python <script>
 ```
 
-### Smoke test before any long run
-A full video sweep is **hours**: Table 9's rank-10 row alone sums to ~2000s
-across seven methods, and `ranks = [2,5,10,20,25]` costs more at each step.
+That is the whole interface. What differs between folders is only **which
+constants exist** and **what data they point at**:
+
+| folder | script | data | knobs (line) |
+|---|---|---|---|
+| `random-tensor` | `main.py` | synthetic `10x100x10x10` | `ranks` 239 |
+| `real-world` | `main.py` | `datasets/` | `dataset_name` 48 (`miserables`\|`spectrometer`), `ranks` 59 |
+| `application-images` | `main_image.py` | 4 PNGs | `name_` 246 (`mri`\|`cat`\|`flower`\|`monalisa`), `ranks` 256 |
+| `application-videos` | `main_video.py` | `video.mp4` | `video_path` 243, `ranks` 265 |
+
+Every script also has `maxIter = 40000` (line 276 / 63 / 327 / 391) governing
+**AGD and IGD only**. Those two are numba-CPU and dominate wall-clock; they are
+not what we optimise.
+
+### Making a run fast
+
+Two levers, both large:
 
 ```bash
-cd application-videos
+sed -i 's/^ranks = .*/ranks = [10]/'      <script>   # one rank not five
+sed -i 's/maxIter = 40000/maxIter = 2000/' <script>   # AGD/IGD budget
+```
+
+Rule of thumb on the RTX 4050: images are seconds, video is minutes with
+`maxIter=2000` and hours at 40000. **Iterate on images, confirm on video.**
+
+### Edit-run-restore, safely
+
+```bash
 cp main_video.py /tmp/mv.bak
 sed -i 's/^ranks = .*/ranks = [2]/; s/maxIter = 40000/maxIter = 500/' main_video.py
 ../.venv/bin/python main_video.py
-cp /tmp/mv.bak main_video.py            # restore
+cp /tmp/mv.bak main_video.py
 ```
-
-`maxIter` governs AGD/IGD, which dominate wall-clock. To time only
-HadNet/HadDNN, comment out the AGD/IGD/BCD blocks and the sweep drops from
-hours to minutes.
 
 ---
 
-## 4. Verifying the optimisations
+## 3. Tests
 
 ```bash
-.venv/bin/python tests/test_ops.py         # correctness + speed of the kernels
-.venv/bin/python tests/test_lipschitz.py   # convergence-regime comparison
+.venv/bin/python tests/test_ops.py          # kernel correctness + speed
+.venv/bin/python tests/test_range.py        # [0,1] constraint experiment
+.venv/bin/python tests/test_kfactors.py     # k>2, matched predicted rank
+.venv/bin/python tests/test_kfactors_pareto.py   # k>2, error-vs-time frontier
+.venv/bin/python tests/test_lipschitz.py    # step-size regimes
 ```
 
-`test_ops.py` asserts `h_prod` is **bit-identical** to the original loop. If
-that ever fails, the batching is wrong — treat it as a hard stop.
+`test_ops.py` is the gate. It asserts `h_prod` is **exact in float64**,
+bit-identical on CPU, and within 8 ulp on GPU. A failure there means the
+batching is wrong — stop and fix before trusting any timing.
 
 ---
 
-## 5. Baseline vs branch
+## 4. Baseline vs a branch
 
-You cannot claim a speedup without a "before" measured on the same hardware.
+Never claim a speedup without a before-number on the same hardware. The
+harness uses a **git worktree**, so the working repo never changes branch:
 
 ```bash
-git checkout main
-cd application-videos && ../.venv/bin/python main_video.py 2>&1 | tee ../bench/baseline.log
-cd .. && git checkout perf/batch-hprod
-cd application-videos && ../.venv/bin/python main_video.py 2>&1 | tee ../bench/optimised.log
-diff <(grep Time ../bench/baseline.log) <(grep Time ../bench/optimised.log)
+bash bench/run_compare.sh                    # writes bench/*.log
 ```
 
-**The error / PSNR / SSIM columns must not move** for the `h_prod` change —
-it is bit-identical. Early stopping and the randomized init *will* shift error
-slightly (~1%); that is expected and documented in `docs/DECISIONS.md`.
+It runs images (full sweep) then video (`maxIter` reduced) on both trees. To
+compare a different branch, edit `BASE`/`REPO` at the top.
+
+Reading results — the scripts print
+`<method> Rank <r>: Time <t>s, Error <e>, Rel Error <re>`:
+
+```bash
+grep "Rank" bench/images_optimised.log
+diff <(grep Rank bench/images_baseline.log) <(grep Rank bench/images_optimised.log)
+```
+
+**What must not move:** baselines (SVD/QR/BCD/AGD/IGD) should show speedup
+1.0x and error delta exactly 0.00000. They are the control. Movement there
+means contamination, not improvement.
 
 ---
 
-## 6. Disk
+## 5. Branch-per-approach
 
-CUDA torch is ~2.5 GB and the venv can reach 3.5 GB. A previous install died
-with `[Errno 28] No space left on device`.
+One branch per idea, each cut **from `main`** — not from another branch, or
+you cannot attribute the result.
 
 ```bash
-df -h /                        # free space
-du -sh .venv ~/.cache/pip      # the two big reclaimables
-.venv/bin/pip cache purge      # safe: just downloaded wheels
-rm -rf .venv                   # safe: fully rebuildable from requirements.txt
+git checkout main && git checkout -b <prefix>/<name>
 ```
 
-Delete the old venv **before** installing the CUDA one, or you will need room
-for both at once.
+| prefix | meaning | error may move? |
+|---|---|---|
+| `perf/` | speed only, maths unchanged | **no** — must be bit-identical |
+| `opt/` | different optimiser or schedule | yes, and must be justified |
+| `model/` | different model class | yes, expected |
+
+Commit after each test, whether the result is good or bad — a measured
+negative is worth more than an untested idea. `DECISIONS.md` is the record.
 
 ---
 
-## 7. Git
+## 6. Housekeeping
 
 ```bash
-git status --short
-git diff --stat main                    # size of the change
-git diff main -- hadamard_ops.py        # review one file
-git checkout main -- <file>             # revert one file
+git worktree list                  # baseline checkout lives in scratchpad
+git worktree remove <path>         # when done
+du -sh .venv ~/.cache/pip          # CUDA venv is ~7.3G
 ```
-
-`.venv/` and `__pycache__/` are gitignored. Nothing is committed yet — all
-work sits in the working tree on `perf/batch-hprod`.
