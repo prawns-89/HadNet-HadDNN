@@ -361,9 +361,21 @@ class DiscrepancyStop:
                 break
 
     tau > 1 stops earlier (more conservative about noise), tau < 1 later.
+
+    Default tau=0.8, not the classical Morozov tau=1. Measured on video at
+    rank 25 (epochs, since sub-second wall-clock is noisy):
+
+        tau   1.2    1.0    0.9    0.8    0.7    0.6
+        epoch 230    237    245    309   1113   2000
+        clean +23.7% +15.2% +8.9%  +3.1% +0.0%  +0.0%
+
+    tau=1 stops slightly early here: the model is a biased estimator, so its
+    residual reaching the noise floor does not mean the remaining residual is
+    all noise. tau=0.8 gives ~6.5x fewer epochs for +3.1%, against EarlyStop's
+    +57% for comparable savings (DECISIONS.md Sec. 17).
     """
 
-    def __init__(self, sigma, n_entries, tau=1.0, min_epochs=20):
+    def __init__(self, sigma, n_entries, tau=0.8, min_epochs=20):
         import math
         self.target = tau * sigma * math.sqrt(n_entries)
         self.min_epochs = min_epochs

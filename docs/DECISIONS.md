@@ -613,3 +613,28 @@ output), the noise injection deserves its own scrutiny.
 
 **Next:** sweep `tau` -- the +15% at rank 25 suggests the classical `tau=1`
 Morozov choice stops slightly early for this model.
+
+### 19.1 tau sweep -- default set to 0.8
+
+Classical Morozov picks tau=1 (stop when the residual reaches the noise level).
+Measured on video, using **epoch counts** since sub-second wall-clock is noisy:
+
+| rank 25 | tau=1.2 | tau=1.0 | tau=0.9 | **tau=0.8** | tau=0.7 | tau=0.6 |
+|---|---|---|---|---|---|---|
+| epochs | 230 | 237 | 245 | **309** | 1113 | 2000 |
+| err(clean) vs full | +23.7% | +15.2% | +8.9% | **+3.1%** | +0.0% | +0.0% |
+
+| rank 20 | tau=1.2 | tau=1.0 | tau<=0.9 |
+|---|---|---|---|
+| epochs | 294 | 1622 | 2000 (never fires) |
+| err(clean) | +14.9% | +0.4% | +0.0% |
+
+**tau=0.8 adopted**: ~6.5x fewer epochs for +3.1% clean error, against
+EarlyStop's +57% for comparable savings.
+
+tau=1 stops slightly early because the model is a *biased* estimator -- its
+residual reaching the noise floor does not imply the remainder is all noise, so
+there is still signal to extract below it. The rank-20 column shows how sharp
+the transition is (294 epochs at 1.2, 1622 at 1.0): the residual dwells near
+the floor, so tau is a real knob, not a free parameter. It is at least a
+*principled* knob -- scale-free and transferable -- unlike EarlyStop's patience.
