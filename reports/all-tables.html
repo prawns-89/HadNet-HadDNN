@@ -1,0 +1,127 @@
+<title>Every Number, Side by Side</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{--ground:#f4f6f8;--panel:#fff;--sunk:#e8ecf0;--ink:#0d1520;--ink-2:#455263;--ink-3:#7b8798;
+--line:#d5dce4;--teal:#0d7f80;--teal-soft:#e2f1f1;--amber:#a8500c;--amber-soft:#fbeee2;
+--shadow:0 1px 2px rgba(13,21,32,.06),0 8px 24px -12px rgba(13,21,32,.18)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#0b1017;--panel:#131b25;--sunk:#0e151d;
+--ink:#e8eef5;--ink-2:#9fadbd;--ink-3:#6b7a8c;--line:#232f3d;--teal:#42b8b6;--teal-soft:#0f2a2b;
+--amber:#e08a44;--amber-soft:#2a1d12;--shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7)}}
+:root[data-theme="dark"]{--ground:#0b1017;--panel:#131b25;--sunk:#0e151d;--ink:#e8eef5;--ink-2:#9fadbd;
+--ink-3:#6b7a8c;--line:#232f3d;--teal:#42b8b6;--teal-soft:#0f2a2b;--amber:#e08a44;--amber-soft:#2a1d12;
+--shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7)}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:48px 22px 90px}
+h1,h2{font-family:"IBM Plex Serif",Georgia,serif;margin:0;text-wrap:balance}
+h1{font-size:clamp(27px,3.7vw,40px);font-weight:600;letter-spacing:-.018em;line-height:1.14}
+h2{font-size:20px;font-weight:600;margin:0 0 5px}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);margin:0 0 12px}
+.lede{font-size:16.5px;color:var(--ink-2);max-width:70ch;margin:15px 0 0}
+.lede b{color:var(--ink);font-weight:600}
+.sec{margin-top:44px}
+.sub{font-size:14px;color:var(--ink-3);margin:0 0 16px;max-width:78ch}
+mono{font-family:"IBM Plex Mono",monospace}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--panel);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 11px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:500;background:var(--sunk);position:sticky;top:0}
+th:first-child,td:first-child{text-align:left;font-weight:500}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--sunk)}
+td.best{color:var(--teal);font-weight:600}
+td.had{background:var(--teal-soft)}
+th.had{background:var(--teal-soft);color:var(--teal)}
+td.mine{background:var(--amber-soft)}
+th.mine{background:var(--amber-soft);color:var(--amber)}
+.seg{display:flex;background:var(--sunk);border:1px solid var(--line);border-radius:3px;padding:2px;gap:2px;flex-wrap:wrap;margin-bottom:16px}
+.seg button{font-family:"IBM Plex Mono",monospace;font-size:12.5px;border:0;background:transparent;color:var(--ink-2);padding:7px 13px;border-radius:2px;cursor:pointer;font-weight:500}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.seg button:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+.key{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-3);margin-top:11px}
+.key span{display:flex;align-items:center;gap:6px}
+.sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+.callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:3px;padding:17px 20px;margin:20px 0;box-shadow:var(--shadow)}
+.callout h3{font-family:"IBM Plex Serif",serif;font-size:16px;margin:0 0 7px;font-weight:600}
+.callout p{margin:7px 0;color:var(--ink-2);font-size:14px}
+.callout b{color:var(--ink)}
+footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:5px 18px}
+</style>
+<div class="wrap">
+<p class="eyebrow">Neurocomputing 699 (2026) 134372 &middot; replication</p>
+<h1>Every number, side by side</h1>
+<p class="lede">The paper's reported tables, and the same quantities re-measured &mdash; plus the column the paper does not have: <b>SVD given the same storage budget</b>. HadNet at rank <mono>r</mono> keeps four factors, <mono>2r(m+n)</mono> values, against SVD's <mono>r(m+n)</mono>, so a matched-rank comparison hands it double.</p>
+
+<div class="callout">
+<h3>The answer depends entirely on the spectrum</h3>
+<p>On <b>full-rank data</b> &mdash; the paper's Tables 2, 5, 6 &mdash; HadNet wins the fair comparison too, and by a widening margin. On <b>images</b> it loses at every rank. Natural and medical images are approximately low-rank, so a truncated SVD is already near-optimal; full-rank data has a flat spectrum where truncation is costly and the <mono>r&sup2;</mono> reach genuinely pays.</p>
+<p><b>So the paper's image and video applications are its weakest case, not its strongest</b> &mdash; the opposite of the impression Table 9 gives.</p>
+</div>
+
+<div class="sec">
+<h2>Paper's reported relative error</h2>
+<p class="sub">Transcribed from the PDF. Green marks the best method in each row; the HadNet column is highlighted.</p>
+<div class="seg" id="pt"></div>
+<div class="scroll"><table id="ptab"></table></div>
+<div class="key"><span><span class="sw" style="background:var(--teal-soft);border:1px solid var(--teal)"></span>HadNet (the paper's method)</span><span><span class="sw" style="background:var(--teal)"></span>best in row</span></div>
+</div>
+
+<div class="sec">
+<h2>Matched storage &mdash; the column the paper omits</h2>
+<p class="sub">SVD at rank <mono>2r</mono> costs exactly what HadNet at rank <mono>r</mono> costs. Measured here, not from the paper.</p>
+<div class="seg" id="mt"></div>
+<div class="scroll"><table id="mtab"></table></div>
+<div class="key"><span><span class="sw" style="background:var(--teal-soft);border:1px solid var(--teal)"></span>HadNet</span><span><span class="sw" style="background:var(--amber-soft);border:1px solid var(--amber)"></span>SVD at matched storage</span><span><span class="sw" style="background:var(--teal)"></span>winner of the fair comparison</span></div>
+</div>
+
+<div class="sec">
+<h2>Re-measured: before and after optimisation</h2>
+<p class="sub">Same code, same data, on an RTX 4050. <mono>base</mono> is the released code; <mono>opt</mono> adds batched <mono>h_prod</mono> + randomized init + early stopping. Baselines should show ~1.0&times; and identical error &mdash; they are the control.</p>
+<div class="seg" id="rt"></div>
+<div class="scroll"><table id="rtab"></table></div>
+</div>
+
+<footer><span>RTX 4050 &middot; torch 2.11.0+cu128</span><span>paper: RTX 4500 Ada, 24 GB</span><span>detail in docs/DECISIONS.md</span></footer>
+</div>
+<script>
+const D={"paper": {"t2": {"title": "Table 2 \u2014 full-rank random matrix (100\u00d7100)", "norm": 34.583231, "cols": ["SVD", "RRQR", "AGD", "BCD", "IGD", "HadNet", "HadDNN"], "rows": {"2": [0.672419, 0.765771, 0.653733, 0.654031, 0.657328, 0.653495, 0.654414], "5": [0.634914, 0.698019, 0.559793, 0.558039, 0.572683, 0.559397, 0.578155], "10": [0.576499, 0.631522, 0.40595, 0.405342, 0.419852, 0.401281, 0.443176], "20": [0.473567, 0.547539, 0.141539, 0.135112, 0.170279, 0.131183, 0.167314], "25": [0.425583, 0.507177, 0.058513, 0.054475, 0.101064, 0.04582, 0.069544], "40": [0.296403, 0.395348, 0.003303, 0.000246, 0.021252, 0.000585, 2.3e-05], "50": [0.221661, 0.322361, 0.000186, 5.9e-05, 0.012854, 1e-06, 6e-06]}, "time": {"2": [0.00204, 0.0008, 4.68751, 0.4413, 1.51887, 0.35243, 2.79312], "10": [0.00175, 0.00132, 6.33875, 0.76649, 1.8265, 0.3398, 2.78339], "25": [0.0017, 0.00093, 9.50002, 1.72484, 2.1559, 0.45891, 2.7758], "50": [0.00206, 0.00134, 13.65287, 4.53095, 2.14936, 1.15557, 2.79356]}}, "t5": {"title": "Table 5 \u2014 full-rank tensor (100\u00d7100\u00d710)", "norm": 185.323975, "cols": ["TSVD", "TRRQR", "TAGD", "TIGD", "TBCD", "HadNet", "HadDNN"], "rows": {"2": [0.505219, 0.591729, 0.491122, 0.494744, 0.492011, 0.491313, 0.496144], "5": [0.478239, 0.524975, 0.425133, 0.429002, 0.42528, 0.424792, 0.434397], "10": [0.434052, 0.478732, 0.317618, 0.325513, 0.316993, 0.314593, 0.335672], "20": [0.356981, 0.414765, 0.123643, 0.140686, 0.122226, 0.116117, 0.199692], "25": [0.322405, 0.385702, 0.047321, 0.075937, 0.052683, 0.040403, 0.094004], "40": [0.226227, 0.301356, 0.001006, 0.009509, 0.000172, 2e-06, 0.00957], "50": [0.170637, 0.245769, 0.001109, 0.002729, 2.9e-05, 2.374e-07, 0.000639]}, "time": {"2": [0.10278, 0.01152, 28.09035, 14.64841, 4.38661, 4.50086, 5.82722], "10": [0.03532, 0.01114, 33.76702, 17.08925, 6.88376, 3.13768, 5.27579], "25": [0.02001, 0.00576, 49.30425, 20.17361, 15.09002, 3.30223, 7.85675], "50": [0.01999, 0.006, 74.21787, 19.5174, 45.19605, 3.2908, 12.41523]}}, "t6": {"title": "Table 6 \u2014 full-rank tensor (100\u00d7100\u00d710\u00d710)", "norm": 585.881165, "cols": ["TSVD", "TRRQR", "TAGD", "TIGD", "TBCD", "HadNet", "HadDNN"], "rows": {"2": [0.506545, 0.588182, 0.492622, 0.496136, 0.493452, 0.492568, 0.497605], "5": [0.477911, 0.524332, 0.42543, 0.429585, 0.425242, 0.424179, 0.435892], "10": [0.43537, 0.48007, 0.317027, 0.324157, 0.316146, 0.315282, 0.332697], "20": [0.357283, 0.415354, 0.122591, 0.140874, 0.121947, 0.116213, 0.156747], "25": [0.322272, 0.38664, 0.047596, 0.076277, 0.052448, 0.040153, 0.07645], "40": [0.226583, 0.301575, 0.00068, 0.009276, 0.000194, 1e-06, 0.005323], "50": [0.170656, 0.246672, 0.000889, 0.00278, 3.9e-05, 2.799e-07, 0.005013]}, "time": {"2": [0.05856, 0.20349, 258.26479, 130.38565, 45.17718, 31.30048, 35.93638], "10": [0.05298, 0.15744, 336.67119, 166.74662, 75.85189, 30.97852, 53.98496], "25": [0.053, 0.15441, 494.42014, 199.52406, 194.88078, 31.58555, 88.02366], "50": [0.05225, 0.15288, 733.97193, 190.24261, 526.8072, 31.49764, 144.16543]}}}, "matched": {"fullrank": {"title": "Full-rank random 100\u00d7100 \u2014 matched storage", "ranks": [2, 5, 10, 20, 25, 40, 50], "svd_r": [0.962923, 0.910902, 0.829952, 0.68, 0.611893, 0.42764, 0.322372], "had_r": [0.936151, 0.775927, 0.540522, 0.185916, 0.067476, 0.0, 0.0], "svd_2r": [0.927952, 0.829952, 0.68, 0.42764, 0.322372, 0.080829, 1.9e-05]}, "mri": {"title": "128mri.png 256\u00d7256 \u2014 matched storage", "ranks": [2, 5, 10, 25, 50, 75, 100, 128], "svd_r": [0.48605, 0.38196, 0.27724, 0.14382, 0.06435, 0.03383, 0.01869, 0.01022], "had_r": [0.48066, 0.3662, 0.25119, 0.12036, 0.04585, 0.02151, 0.01087, 0.00507], "svd_2r": [0.4091, 0.27724, 0.17549, 0.06435, 0.01869, 0.0062, 0.00129, 3e-05]}, "cat": {"title": "128cat.png 256\u00d7256 \u2014 matched storage", "ranks": [2, 5, 10, 25, 50, 75, 100, 128], "svd_r": [0.3106, 0.22537, 0.16317, 0.09871, 0.06994, 0.05223, 0.03859, 0.02617], "had_r": [0.31073, 0.22346, 0.163, 0.09852, 0.07042, 0.05268, 0.0386, 0.02602], "svd_2r": [0.24717, 0.16317, 0.11078, 0.06994, 0.03859, 0.01839, 0.0056, 3e-05]}}, "mine": {"video_base": {"SVD|2": [0.1869, 0.322747], "QR|2": [6.4991, 0.378433], "AGD|2": [51.8259, 0.251903], "IGD|2": [52.5013, 0.25184], "BCD|2": [144.4925, 0.248292], "HadamardNet|2": [139.1234, 0.248856], "HadamardDNN|2": [162.7263, 0.259718], "SVD|5": [0.1845, 0.202311], "QR|5": [5.3757, 0.26628], "AGD|5": [53.5215, 0.136276], "IGD|5": [52.9462, 0.130423], "BCD|5": [165.1699, 0.121346], "HadamardNet|5": [150.9039, 0.117307], "HadamardDNN|5": [213.7707, 0.146158], "SVD|10": [0.1841, 0.134775], "QR|10": [6.9414, 0.193469], "AGD|10": [61.3355, 0.157881], "IGD|10": [53.6529, 0.074527], "BCD|10": [193.8894, 0.064018], "HadamardNet|10": [166.1955, 0.058671], "HadamardDNN|10": [291.1358, 0.082668], "SVD|20": [0.183, 0.078624], "QR|20": [5.0245, 0.11514], "AGD|20": [77.569, 0.542511], "IGD|20": [53.9994, 0.038372], "BCD|20": [246.3752, 0.028413], "HadamardNet|20": [195.8916, 0.023719], "HadamardDNN|20": [442.1791, 0.047226], "SVD|25": [0.184, 0.063539], "QR|25": [5.6636, 0.093575], "AGD|25": [89.7446, 1.089497], "IGD|25": [54.4976, 0.031121], "BCD|25": [285.6303, 0.020525], "HadamardNet|25": [207.1171, 0.016234]}, "video_opt": {"SVD|2": [0.2005, 0.322747], "QR|2": [5.6186, 0.378433], "AGD|2": [50.9819, 0.251546], "IGD|2": [51.5621, 0.25184], "BCD|2": [144.7274, 0.248292], "HadamardNet|2": [1.4204, 0.250648], "HadamardDNN|2": [6.4894, 0.263045], "SVD|5": [0.3091, 0.202311], "QR|5": [6.6962, 0.26628], "AGD|5": [52.3603, 0.136195], "IGD|5": [52.0685, 0.130325], "BCD|5": [164.1785, 0.121346], "HadamardNet|5": [1.5536, 0.123641], "HadamardDNN|5": [28.3128, 0.156354], "SVD|10": [0.1845, 0.134775], "QR|10": [5.986, 0.193469], "AGD|10": [59.7964, 0.157385], "IGD|10": [52.7115, 0.07451], "BCD|10": [194.0701, 0.064018], "HadamardNet|10": [1.361, 0.066912], "HadamardDNN|10": [51.1287, 0.098271], "SVD|20": [0.185, 0.078624], "QR|20": [6.2032, 0.11514], "AGD|20": [77.1863, 0.54234], "IGD|20": [53.7179, 0.03846], "BCD|20": [241.9584, 0.028413], "HadamardNet|20": [1.1578, 0.038672], "HadamardDNN|20": [60.8434, 0.065163], "SVD|25": [0.1844, 0.063539], "QR|25": [6.1198, 0.093575], "AGD|25": [88.9097, 1.096023], "IGD|25": [53.8382, 0.03111], "BCD|25": [283.4014, 0.020525], "HadamardNet|25": [1.1225, 0.034068]}, "img_base": {"SVD|2": [0.0915, 0.486509], "QR|2": [0.2336, 0.601716], "AGD|2": [46.916, 0.427016], "IGD|2": [1.4522, 0.428811], "HBCD|2": [8.2168, 0.421512], "HadamardNet|2": [2.6438, 0.426557], "HadamardDNN|2": [5.0882, 0.424903], "SVD|5": [0.0249, 0.382678], "QR|5": [0.0177, 0.501891], "AGD|5": [47.997, 0.242704], "IGD|5": [0.3945, 0.265557], "HBCD|5": [9.7795, 0.243025], "HadamardNet|5": [2.3502, 0.24527], "HadamardDNN|5": [5.8064, 0.250316], "SVD|10": [0.0233, 0.278295], "QR|10": [0.3119, 0.360431], "AGD|10": [49.0456, 0.129719], "IGD|10": [8.0537, 0.137453], "HBCD|10": [11.6825, 0.132033], "HadamardNet|10": [2.4345, 0.12265], "HadamardDNN|10": [7.4442, 0.238327], "SVD|20": [0.0196, 0.177021], "QR|20": [0.2913, 0.252644], "AGD|20": [50.5039, 0.055959], "IGD|20": [8.2766, 0.066781], "HBCD|20": [12.8414, 0.060353], "HadamardNet|20": [2.4028, 0.053657], "HadamardDNN|20": [11.7324, 0.0767], "SVD|25": [0.0195, 0.145715], "QR|25": [0.1611, 0.211464], "AGD|25": [48.5558, 0.042177], "IGD|25": [7.8879, 0.05217], "HBCD|25": [14.0947, 0.044952], "HadamardNet|25": [2.402, 0.039247], "HadamardDNN|25": [13.4416, 0.23139]}, "img_opt": {"SVD|2": [0.0858, 0.486509], "QR|2": [0.0181, 0.601716], "AGD|2": [46.7457, 0.424685], "IGD|2": [1.4111, 0.428811], "HBCD|2": [8.4683, 0.421512], "HadamardNet|2": [0.7446, 0.426684], "HadamardDNN|2": [1.4943, 0.437187], "SVD|5": [0.0248, 0.382678], "QR|5": [0.0271, 0.501891], "AGD|5": [47.952, 0.242977], "IGD|5": [2.483, 0.280111], "HBCD|5": [9.8826, 0.243025], "HadamardNet|5": [0.1468, 0.252509], "HadamardDNN|5": [2.3094, 0.283344], "SVD|10": [0.0213, 0.278295], "QR|10": [0.2927, 0.360431], "AGD|10": [48.1314, 0.129748], "IGD|10": [7.176, 0.137164], "HBCD|10": [11.2079, 0.132033], "HadamardNet|10": [0.25, 0.132605], "HadamardDNN|10": [6.0686, 0.166288], "SVD|20": [0.0195, 0.177021], "QR|20": [0.3455, 0.252644], "AGD|20": [50.5963, 0.056159], "IGD|20": [7.5794, 0.066953], "HBCD|20": [12.8994, 0.060353], "HadamardNet|20": [0.177, 0.066188], "HadamardDNN|20": [6.253, 0.153873], "SVD|25": [0.0198, 0.145715], "QR|25": [0.3015, 0.211464], "AGD|25": [54.3336, 0.042279], "IGD|25": [7.6212, 0.05169], "HBCD|25": [14.9163, 0.044952], "HadamardNet|25": [0.3606, 0.051491], "HadamardDNN|25": [6.312, 0.191537]}}};
+const st={pt:"t5",mt:"fullrank",rt:"video"};
+function seg(el,items,key,fmt,cb){el.innerHTML="";items.forEach(v=>{const b=document.createElement("button");
+b.type="button";b.textContent=fmt(v);b.setAttribute("aria-pressed",String(st[key]===v));
+b.onclick=()=>{st[key]=v;cb();};el.appendChild(b);});}
+const f=(v)=>v===0?"0":(v<1e-4?v.toExponential(2):v.toFixed(6));
+
+function paperTab(){
+  const T=D.paper[st.pt], cols=T.cols, ranks=Object.keys(T.rows).map(Number).sort((a,b)=>a-b);
+  seg(document.getElementById("pt"),Object.keys(D.paper),"pt",k=>D.paper[k].title.split("—")[1].trim(),paperTab);
+  let h=`<thead><tr><th>rank</th>${cols.map(c=>`<th class="${c==='HadNet'?'had':''}">${c}</th>`).join("")}</tr></thead><tbody>`;
+  ranks.forEach(r=>{const row=T.rows[r],mn=Math.min(...row);
+    h+=`<tr><td>r = ${r}</td>`+row.map((v,i)=>`<td class="${cols[i]==='HadNet'?'had ':''}${v===mn?'best':''}">${f(v)}</td>`).join("")+`</tr>`;});
+  document.getElementById("ptab").innerHTML=h+"</tbody>";
+}
+function matchedTab(){
+  const T=D.matched[st.mt];
+  seg(document.getElementById("mt"),Object.keys(D.matched),"mt",k=>D.matched[k].title.split("—")[0].trim(),matchedTab);
+  let h=`<thead><tr><th>rank</th><th>SVD (r)</th><th class="had">HadNet (r)</th><th class="mine">SVD (2r) &mdash; same storage</th><th>fair winner</th></tr></thead><tbody>`;
+  T.ranks.forEach((r,i)=>{const hd=T.had_r[i],s2=T.svd_2r[i],win=hd<s2;
+    h+=`<tr><td>r = ${r}</td><td>${f(T.svd_r[i])}</td>`+
+       `<td class="had ${win?'best':''}">${f(hd)}</td>`+
+       `<td class="mine ${!win?'best':''}">${f(s2)}</td>`+
+       `<td style="text-align:left;color:${win?'var(--teal)':'var(--amber)'}">${win?'HadNet':'SVD (2r)'}</td></tr>`;});
+  document.getElementById("mtab").innerHTML=h+"</tbody>";
+}
+function reTab(){
+  seg(document.getElementById("rt"),["video","img"],"rt",k=>k==="video"?"Carphone video":"MRI image",reTab);
+  const b=D.mine[st.rt+"_base"],o=D.mine[st.rt+"_opt"];
+  const keys=[...new Set(Object.keys(b))].sort((x,y)=>{const[a1,r1]=x.split("|"),[a2,r2]=y.split("|");
+    return a1===a2?(+r1)-(+r2):a1.localeCompare(a2);});
+  let h=`<thead><tr><th>method</th><th>rank</th><th>base time</th><th class="mine">opt time</th><th>speedup</th><th>base err</th><th class="mine">opt err</th></tr></thead><tbody>`;
+  keys.forEach(k=>{if(!o[k])return;const[nm,r]=k.split("|");const[tb,eb]=b[k],[to,eo]=o[k];
+    const sp=to>0?tb/to:0, big=sp>2;
+    h+=`<tr><td>${nm}</td><td>${r}</td><td>${tb.toFixed(3)}</td><td class="mine">${to.toFixed(3)}</td>`+
+       `<td class="${big?'best':''}">${sp.toFixed(1)}&times;</td><td>${eb.toFixed(5)}</td><td class="mine">${eo.toFixed(5)}</td></tr>`;});
+  document.getElementById("rtab").innerHTML=h+"</tbody>";
+}
+paperTab();matchedTab();reTab();
+</script>

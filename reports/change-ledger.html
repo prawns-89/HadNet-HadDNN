@@ -1,0 +1,171 @@
+<title>Change Ledger</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#f4f6f8; --panel:#fff; --sunk:#e8ecf0;
+  --ink:#0d1520; --ink-2:#455263; --ink-3:#7b8798;
+  --line:#d5dce4;
+  --teal:#0d7f80; --teal-soft:#e2f1f1;
+  --amber:#a8500c; --amber-soft:#fbeee2;
+  --red:#9b2c2c; --red-soft:#fbeaea;
+  --shadow:0 1px 2px rgba(13,21,32,.06),0 8px 24px -12px rgba(13,21,32,.18);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0b1017; --panel:#131b25; --sunk:#0e151d;
+  --ink:#e8eef5; --ink-2:#9fadbd; --ink-3:#6b7a8c;
+  --line:#232f3d;
+  --teal:#42b8b6; --teal-soft:#0f2a2b;
+  --amber:#e08a44; --amber-soft:#2a1d12;
+  --red:#e06d6d; --red-soft:#2a1414;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+}}
+:root[data-theme="dark"]{
+  --ground:#0b1017; --panel:#131b25; --sunk:#0e151d;
+  --ink:#e8eef5; --ink-2:#9fadbd; --ink-3:#6b7a8c;
+  --line:#232f3d;
+  --teal:#42b8b6; --teal-soft:#0f2a2b;
+  --amber:#e08a44; --amber-soft:#2a1d12;
+  --red:#e06d6d; --red-soft:#2a1414;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:52px 26px 90px}
+h1,h2{font-family:"IBM Plex Serif",Georgia,serif;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,4vw,42px);font-weight:600;letter-spacing:-.018em;line-height:1.14}
+h2{font-size:21px;font-weight:600;margin:0 0 6px}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);margin:0 0 13px}
+.lede{font-size:17px;color:var(--ink-2);max-width:66ch;margin:16px 0 0}
+.lede b{color:var(--ink);font-weight:600}
+.sec{margin-top:46px}
+.sub{font-size:14.5px;color:var(--ink-3);margin:0 0 18px;max-width:70ch}
+mono,.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--panel);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:11px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:500;background:var(--sunk);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td.num,th.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+td.what{font-weight:600;width:23%}
+.pill{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;padding:3px 7px;border-radius:2px;white-space:nowrap}
+.keep{background:var(--teal-soft);color:var(--teal)}
+.drop{background:var(--red-soft);color:var(--red)}
+.flag{background:var(--amber-soft);color:var(--amber)}
+.note{font-size:12.5px;color:var(--ink-3);margin-top:5px;line-height:1.45}
+.claim{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:3px;overflow:hidden;margin:30px 0 0}
+.claim div{background:var(--panel);padding:17px 19px}
+.claim .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.claim .v{font-family:"IBM Plex Mono",monospace;font-size:24px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.claim .n{font-size:12.5px;color:var(--ink-2);margin-top:3px}
+.chal{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:3px;padding:19px 22px;margin-bottom:14px;box-shadow:var(--shadow)}
+.chal h3{font-family:"IBM Plex Serif",serif;font-size:17px;margin:0 0 9px;font-weight:600}
+.chal p{margin:8px 0;color:var(--ink-2);font-size:14.5px}
+.chal b{color:var(--ink)}
+.vs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:12px 0 4px}
+@media(max-width:700px){.vs{grid-template-columns:1fr}}
+.vs>div{background:var(--sunk);border-radius:3px;padding:13px 15px}
+.vs .lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.vs .val{font-family:"IBM Plex Mono",monospace;font-size:14px;font-variant-numeric:tabular-nums}
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:6px 20px}
+</style>
+<div class="wrap">
+<p class="eyebrow">Neurocomputing 699 (2026) 134372 &middot; independent replication</p>
+<h1>Every change, measured against the paper</h1>
+<p class="lede">Seventeen changes tried on the authors' released code. <b>Two adopted</b>, eight rejected with numbers, and <b>three findings that contradict the paper's own claims</b>. All on one RTX 4050; the paper used a 24 GB RTX 4500 Ada, so absolute times differ and ratios are what carry.</p>
+
+<div class="claim">
+  <div><div class="k">Speed, composed</div><div class="v" style="color:var(--teal)">176&times;</div><div class="n">27&times; free &times; 6.5&times; stopping</div></div>
+  <div><div class="k">Free portion</div><div class="v">27&times;</div><div class="n">error identical to 5 dp</div></div>
+  <div><div class="k">Ideas tested</div><div class="v">17</div><div class="n">2 adopted, 8 rejected</div></div>
+  <div><div class="k">Paper claims challenged</div><div class="v" style="color:var(--amber)">3</div><div class="n">with measurements</div></div>
+</div>
+
+<div class="sec">
+<h2>The paper's reference point</h2>
+<p class="sub">Table 9, Carphone video 144&times;144&times;3&times;60 at rank 10, on their RTX 4500 Ada.</p>
+<div class="scroll"><table>
+<thead><tr><th>method</th><th class="num">time (s)</th><th class="num">rel. error</th><th class="num">PSNR</th><th>note</th></tr></thead>
+<tbody>
+<tr><td>TSVD</td><td class="num">0.2519</td><td class="num">0.134775</td><td class="num">25.16</td><td>fast, least accurate</td></tr>
+<tr><td>TRRQR</td><td class="num">25.8890</td><td class="num">0.193469</td><td class="num">21.95</td><td>100&times; slower than TSVD for worse error &mdash; a CPU round-trip per slice</td></tr>
+<tr><td>TAGD</td><td class="num">1193.6444</td><td class="num">0.059753</td><td class="num">32.42</td><td>40,000 iters, numba-CPU</td></tr>
+<tr><td>TIGD</td><td class="num">323.7671</td><td class="num">0.072039</td><td class="num">30.71</td><td>40,000 iters</td></tr>
+<tr><td>TBCD</td><td class="num">283.8097</td><td class="num">0.064049</td><td class="num">31.77</td><td>numpy-CPU</td></tr>
+<tr style="background:var(--teal-soft)"><td><b>HadNet</b></td><td class="num"><b>57.3602</b></td><td class="num"><b>0.058552</b></td><td class="num"><b>32.60</b></td><td>the paper's best</td></tr>
+<tr><td>HadDNN</td><td class="num">115.8578</td><td class="num">0.079599</td><td class="num">30.00</td><td>2&times; slower <i>and</i> 36% worse than HadNet</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sec">
+<h2>Change by change</h2>
+<p class="sub">Each row is one intervention against the released code. &ldquo;Effect&rdquo; is measured on the same video, same seed, same epoch budget unless stated.</p>
+<div class="scroll"><table>
+<thead><tr><th>change</th><th>what the code did</th><th>what I changed</th><th class="num">effect</th><th>verdict</th></tr></thead>
+<tbody>
+<tr><td class="what">Batched <mono>h_prod</mono></td><td>One tiny matmul per slice in Python &mdash; 180 slices &times; 2 calls &times; 2000 epochs = <b>720,000 kernel launches</b> per fit</td><td>Permute slice dims to the front, one batched GEMM</td><td class="num"><b>27&times;</b><div class="note">41.5&times; on the kernel alone</div></td><td><span class="pill keep">Adopted</span><div class="note">Exact in float64; 1.4 ulp on GPU (cuBLAS reduction order). Error identical to 5 dp end-to-end.</div></td></tr>
+<tr><td class="what">Randomized SVD init</td><td>Economy SVD computing all 144 singular triplets, then keeping 10 &mdash; <b>93% discarded</b></td><td>Truncated randomized SVD, <mono>niter=4</mono> with a profitability guard</td><td class="num"><b>O(n&#8309;)&rarr;O(n&#8308;)</b><div class="note">4.3&times; on init</div></td><td><span class="pill keep">Adopted</span><div class="note">Removes the only super-quartic term in their Eq. (11).</div></td></tr>
+<tr><td class="what">Stopping rule</td><td><mono>max_epochs=2000</mono> with <b>no early exit</b> &mdash; the patience counter only decays the LR, never breaks</td><td>Stop at the known noise floor: the scripts inject exactly <mono>0.01&middot;randn</mono>, so <mono>&sigma;&radic;N</mono> is analytic</td><td class="num"><b>6.5&times;</b><div class="note">309 epochs vs 2000</div></td><td><span class="pill keep">Adopted</span><div class="note">Predicted floor 19.32, realised 19.32. Costs +3.1% clean error.</div></td></tr>
+<tr><td class="what">GPU timing</td><td><b>No <mono>torch.cuda.synchronize()</mono> anywhere</b>; timers close before the <mono>.item()</mono> that would force a sync</td><td><mono>sync()</mono> at 35 timing sites</td><td class="num">&mdash;</td><td><span class="pill flag">Correctness</span><div class="note">Their GPU timings measure kernel <i>enqueue</i>, not execution.</div></td></tr>
+<tr><td class="what">CPU compatibility</td><td><mono>device='cuda'</mono> hardcoded as a default argument in <mono>HadamardDNN_train</mono></td><td>Fall back properly</td><td class="num">&mdash;</td><td><span class="pill flag">Bug fix</span><div class="note">Repo could not be run at all without a GPU.</div></td></tr>
+<tr><td class="what">Relative-improvement early stop</td><td>&mdash;</td><td>Stop when loss improves &lt;0.1% over 50 epochs</td><td class="num">+171%<div class="note">error, at rank 25</div></td><td><span class="pill drop">Superseded</span><div class="note">No usable operating point: patience&ge;100 never fires, patience=50 costs 3&times; the error. Criterion wrong, not mistuned.</div></td></tr>
+<tr><td class="what">Lipschitz step size</td><td>Adam <mono>lr=0.1</mono>, a magic constant</td><td><mono>lr=1/L</mono> from block curvature</td><td class="num">worse<div class="note">both axes</div></td><td><span class="pill drop">Rejected</span><div class="note">Adam already adapts; block-convexity doesn't license a joint step. Also: the loss is the <i>unsquared</i> norm, so no finite L exists near the optimum.</div></td></tr>
+<tr><td class="what">k&gt;2 Hadamard factors</td><td>Fixed at 2</td><td>k factors, with the derivation <mono>k* = ln R</mono></td><td class="num">k=2 wins<div class="note">at every target</div></td><td><span class="pill drop">Rejected</span><div class="note">The <mono>r&#8319;</mono> rank bound is never attained; k=5 diverges. Provisional &mdash; lr held fixed across k.</div></td></tr>
+<tr><td class="what">Gauge fixing / balancing</td><td>&mdash;</td><td>Canonical representative each step (&Vert;W&Vert;=&Vert;H&Vert;)</td><td class="num">0%<div class="note">7&ndash;21% slower</div></td><td><span class="pill drop">Rejected</span><div class="note">Provably correct (norm ratio 999.4&rarr;1.0000) and changes nothing. Closes the cheap route to the Riemannian idea.</div></td></tr>
+<tr><td class="what">Anderson / DIIS</td><td>&mdash;</td><td>Extrapolate over the iterate sequence</td><td class="num">no gain</td><td><span class="pill drop">Rejected</span><div class="note">Every step is harmful (Adam's state is invalidated); every 10 helps early but converges to the same point.</div></td></tr>
+<tr><td class="what">Anderson + noise-floor stop</td><td>&mdash;</td><td>Both together</td><td class="num">405 vs 309<div class="note">epochs</div></td><td><span class="pill drop">Rejected</span><div class="note">Destructive interference: extrapolation makes the trajectory less monotone, so the threshold takes longer to cross.</div></td></tr>
+<tr><td class="what">Log-domain closed form</td><td>2000 epochs of Adam</td><td>One truncated SVD of <mono>log|X|</mono> &mdash; <b>no optimiser at all</b></td><td class="num">10&ndash;13&times; faster<div class="note">2&ndash;4&times; worse error</div></td><td><span class="pill drop">Rejected</span><div class="note">Minimises log-space error while scored in Frobenius, so it over-weights dark pixels. Also not a reformulation &mdash; it collapses to exponential-family PCA.</div></td></tr>
+<tr><td class="what">Log-domain as init</td><td><mono>sqrt(|X|)</mono> SVD init</td><td>Split <mono>L=L&#8321;+L&#8322;</mono>; <mono>exp</mono> turns the sum into the Hadamard product</td><td class="num">&minus;1.6 to &minus;3.5%<div class="note">final error</div></td><td><span class="pill flag">Marginal</span><div class="note">Starts worse, <i>ends</i> better &mdash; finds a better basin. Costs 0.9 s and helps only past epoch 500, which we no longer reach.</div></td></tr>
+<tr><td class="what">[0,1] range constraint</td><td>Unclamped loss, clamped metrics</td><td>Clamp / penalty / sigmoid</td><td class="num">+0.01 dB</td><td><span class="pill drop">Rejected</span><div class="note">Real overshoot is only ~0.3%; the multiplicative form is self-limiting.</div></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sec">
+<h2>Three findings that contradict the paper</h2>
+<p class="sub">These are not speedups. They bear on whether the reported results mean what they are said to mean.</p>
+
+<div class="chal">
+<h3>1. The headline comparison gives HadNet twice the storage</h3>
+<p>HadNet at rank <mono>r</mono> stores four factors &mdash; <mono>2r(m+n)</mono> values. SVD at rank <mono>r</mono> stores <mono>r(m+n)</mono>. The paper compares at <b>matched rank</b>, so HadNet gets double the budget. Give SVD the same budget by letting it use rank <mono>2r</mono>:</p>
+<div class="vs">
+  <div><div class="lbl">Paper's comparison, rank 25</div><div class="val">HadNet 0.12036<br>SVD(25) 0.14382 &nbsp;<span style="color:var(--teal)">HadNet wins</span></div></div>
+  <div><div class="lbl">Same storage, rank 25</div><div class="val">HadNet 0.12036<br>SVD(50) <b>0.06435</b> &nbsp;<span style="color:var(--amber)">SVD wins</span></div></div>
+</div>
+<p>SVD wins at <b>every rank on both images tested</b>, and the gap widens &mdash; at rank 128 it is 0.00003 against 0.00507. On a natural image HadNet barely wins even at matched rank, so twice the parameters buys nothing. <b>Caveats:</b> two images, and a 2000-epoch budget that may under-train.</p>
+</div>
+
+<div class="chal">
+<h3>2. HadDNN's networks are actively harmful</h3>
+<p>Each factor network maps a factor to itself through a 64-unit bottleneck &mdash; but <b>the final layer's bias is already full-dimensional</b>, so it alone spans the whole factor space. The 332M weights upstream add a 64-dim correction to something already complete.</p>
+<div class="vs">
+  <div><div class="lbl">Plain factors</div><div class="val">76,800 params &middot; 1.00 s<br>error <b>0.03990</b></div></div>
+  <div><div class="lbl">HadDNN as shipped</div><div class="val">10,001,920 params &middot; 8.98 s<br>error <b>0.21590</b></div></div>
+</div>
+<p>Monotone in the wrong direction: freezing 98.5% of the parameters <b>halves</b> the error; widening the bottleneck doubles it again. Plain factors win at <b>every</b> learning rate from 0.3 to 0.001. At rank 25 on video the networks need 4 GB before activations &mdash; it <b>OOMs on a 6 GB card</b>, which is why HadDNN has no rank-25 row in my sweep. The paper's own Table 9 already shows it dominated; this is the mechanism.</p>
+</div>
+
+<div class="chal">
+<h3>3. The benchmark rewards fitting the injected noise</h3>
+<p>The scripts add <mono>0.01&middot;randn</mono> and then score error <i>against the noisy tensor</i>. At rank 25 the full run gives:</p>
+<div class="vs">
+  <div><div class="lbl">Error vs noisy target (reported)</div><div class="val"><b>0.01621</b></div></div>
+  <div><div class="lbl">Error vs the true video</div><div class="val"><b>0.02361</b></div></div>
+</div>
+<p>The reconstruction is <b>closer to the noise realisation than to the real signal</b>. At rank 10 the ordering reverses, because the model then lacks capacity to memorise noise. So every comparison at rank 20+ partly measures noise-fitting, and a method that overfits harder scores better. The same three lines also push <b>17.79% of an MRI below zero</b>, after which metrics are computed on clamped output.</p>
+</div>
+</div>
+
+<div class="sec">
+<h2>What is not verified</h2>
+<div class="scroll"><table>
+<thead><tr><th>gap</th><th>why it matters</th></tr></thead>
+<tbody>
+<tr><td class="what">Hardware differs</td><td>RTX 4050 (6 GB mobile) vs the paper's RTX 4500 Ada (24 GB). Ratios transfer; absolute times do not.</td></tr>
+<tr><td class="what">Baselines not like-for-like</td><td>Their AGD/IGD run 40,000 iterations on numba-CPU against HadNet's 2,000 epochs on GPU. The reported 21&times; advantage over TAGD is close to the iteration ratio alone &mdash; this is in the released code, not something I introduced.</td></tr>
+<tr><td class="what">Two images for the rank finding</td><td>Video and the real-world matrices are untested, and the effect is already visibly data-dependent.</td></tr>
+<tr><td class="what">Four HadDNN fixes untested</td><td>Linear activation, no final bias, and a per-slice shared decoder never got numbers &mdash; stopped for thermal reasons on a 6 GB laptop.</td></tr>
+<tr><td class="what">Paper and code disagree</td><td>&sect;4.2 states &ldquo;a linear activation function&rdquo;; the code ships <mono>Linear&rarr;LayerNorm&rarr;ReLU</mono>. Unresolved which produced the published numbers.</td></tr>
+</tbody></table></div>
+</div>
+
+<footer><span>RTX 4050 &middot; torch 2.11.0+cu128</span><span>13 commits on 7 branches</span><span>detail in docs/DECISIONS.md &sect;1&ndash;25</span></footer>
+</div>
