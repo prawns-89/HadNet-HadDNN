@@ -565,3 +565,74 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 24. HIGH-RANK SWEEP -- the paper's advantage is a parameter-budget artifact
+
+The paper uses **full-rank inputs** but only tests approximation ranks <=25 --
+10-20% of the smaller dimension. Nothing above 20% is ever shown. This sweeps
+to 50% on two images, and compares three ways:
+
+- SVD at rank `r`          -- `r(m+n)` parameters
+- HadNet at rank `r`       -- `2r(m+n)` parameters (W1,H1,W2,H2)
+- **SVD at rank `2r`**     -- `2r(m+n)` parameters: the MATCHED-PARAMETER comparison
+
+The paper compares at matched *nominal rank*, which silently gives HadNet
+**twice the parameters**.
+
+### 128mri.png (256x256)
+
+| rank | %dim | SVD(r) | **HadNet(r)** | **SVD(2r)** = same params |
+|---|---|---|---|---|
+| 2 | 1% | 0.48605 | 0.48066 | **0.40910** |
+| 10 | 4% | 0.27724 | 0.25119 | **0.17549** |
+| 25 | 10% | 0.14382 | 0.12036 | **0.06435** |
+| 50 | 20% | 0.06435 | 0.04585 | **0.01869** |
+| 100 | 39% | 0.01869 | 0.01087 | **0.00129** |
+| 128 | 50% | 0.01022 | 0.00507 | **0.00003** |
+
+### 128cat.png (256x256)
+
+| rank | %dim | SVD(r) | HadNet(r) | **SVD(2r)** |
+|---|---|---|---|---|
+| 2 | 1% | **0.31060** | 0.31073 | **0.24717** |
+| 10 | 4% | 0.16317 | 0.16300 | **0.11078** |
+| 50 | 20% | **0.06994** | 0.07042 | **0.03859** |
+| 128 | 50% | 0.02617 | 0.02602 | **0.00003** |
+
+### Two findings
+
+**1. At matched parameters, SVD wins at every rank on both images, and the gap
+widens with rank** -- 170x at rank 128 on the MRI. HadNet at rank 25 (0.12036)
+beats SVD at rank 25 (0.14382), which is the paper's comparison, but loses
+badly to SVD at rank 50 (0.06435), which costs exactly the same to store.
+
+**2. Even at matched rank the advantage is data-dependent.** On the MRI HadNet
+wins clearly (0.12036 vs 0.14382 at r=25). On the natural image it is a wash or
+slightly *worse* (0.31073 vs 0.31060 at r=2; 0.07042 vs 0.06994 at r=50) --
+i.e. 2x the parameters buys nothing. The MRI has large black regions and hard
+edges; `cat` has smoother natural-image statistics. The multiplicative model
+appears to suit high-contrast, near-binary structure and not much else.
+
+### Why -- and it is the second sighting of the same failure
+
+Eckart-Young makes SVD *optimal* at a given rank in Frobenius norm, so any
+other model can only win by expressing something off the rank-k manifold. The
+Hadamard product of two rank-`r` matrices does reach rank up to `r^2`, so the
+expressiveness is real in principle. It is simply not being converted into
+approximation quality.
+
+That is exactly the pattern in Sec. 18, where the `r^k` bound for `k>2` also
+failed to materialise. **Twice now: the theoretical expressiveness exists and
+neither the model nor Adam reaches it.**
+
+### Caveats before this hardens
+
+- Two images, both 256x256. Video and the real-world matrices are untested.
+- HadNet ran 2000 epochs with LR decay -- the paper's own budget -- but
+  "the optimiser cannot reach the good solutions" and "the solutions are not
+  there" are different claims, and this does not separate them.
+- Parameter count is not the only compression metric. SVD's singular values
+  are ordered and quantise well; Hadamard factors have no such structure. A
+  codec-level comparison (RESEARCH.md Sec. 24) could shift the picture.
