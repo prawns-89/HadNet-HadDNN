@@ -384,3 +384,43 @@ def log_domain_fit(X, r, eps=1e-6, randomized=True, niter=4):
         Lr = (U[..., :, :r] * S[..., :r].unsqueeze(-2)) @ Vh[..., :r, :]
     rec = sgn * torch.exp(Lr)
     return rec.permute(nb, nb + 1, *range(nb))
+
+
+def log_domain_initialize(X, r, eps=1e-6, randomized=True, niter=4):
+    """Hadamard-structured init derived from the log-domain fit (Sec. 23).
+
+    The closed-form log fit is a poor *method* (log space over-weights dark
+    pixels) but a cheap way to reach a low-error point. To use it as a HadNet
+    init we need it in Hadamard form, so:
+
+        1. L = rank-2r truncated SVD of log|X|
+        2. split L = L1 + L2  (first r components, second r)
+        3. M1 = exp(L1),  M2 = sign(X) * exp(L2)      -- M1 o M2 = sign*exp(L)
+        4. factor each Mi into (Wi, Hi) by rank-r SVD
+
+    Step 3 is exact: the split is free because exp turns the sum into a
+    product, which is precisely the Hadamard structure we need.
+    """
+    nb = X.ndim - 2
+    Xt = X.permute(*range(2, X.ndim), 0, 1)
+    sgn = torch.sign(Xt)
+    L = torch.log(Xt.abs().clamp_min(eps))
+    m, n = L.shape[-2], L.shape[-1]
+    q = min(2 * r + 10, min(m, n))
+    if randomized and 2 * r < min(m, n) // 2 and niter * q < min(m, n):
+        U, S, V = torch.svd_lowrank(L, q=q, niter=niter)
+        Vh = V.transpose(-2, -1)
+    else:
+        U, S, Vh = torch.linalg.svd(L, full_matrices=False)
+    L1 = (U[..., :, :r] * S[..., :r].unsqueeze(-2)) @ Vh[..., :r, :]
+    L2 = (U[..., :, r:2*r] * S[..., r:2*r].unsqueeze(-2)) @ Vh[..., r:2*r, :]
+
+    out = []
+    for M in (torch.exp(L1), sgn * torch.exp(L2)):
+        Um, Sm, Vm = torch.linalg.svd(M, full_matrices=False)
+        sr = Sm[..., :r].sqrt()
+        W = Um[..., :, :r] * sr.unsqueeze(-2)
+        H = sr.unsqueeze(-1) * Vm[..., :r, :]
+        out.append(W.permute(nb, nb + 1, *range(nb)))
+        out.append(H.permute(nb, nb + 1, *range(nb)))
+    return out[0], out[1], out[2], out[3]

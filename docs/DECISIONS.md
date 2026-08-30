@@ -621,3 +621,37 @@ of it than 2000 epochs, and each step stays a closed-form weighted SVD.
 0.57 s to reach 0.124 is a **much better starting point than the current
 `sqrt(|X|)` SVD init**, and costs about half what that init does. Tested next
 as an initialiser for HadNet rather than a replacement for it.
+
+### 23.1 Log-domain as an initialiser -- MARGINAL, not adopted
+
+Converting the log fit to Hadamard form is exact and cheap: split `L = L1 + L2`
+in log space, then `exp(L1) * exp(L2)` **is** the Hadamard product -- the split
+is free because `exp` turns a sum into a product. Each `exp(Li)` is then
+factored by rank-`r` SVD.
+
+Relative error at epoch (epoch 0 = the init itself):
+
+| rank | init | t_init | 0 | 50 | 250 | 1000 | 2000 |
+|---|---|---|---|---|---|---|---|
+| 10 | sqrt\|X\| [current] | **1.24 s** | **0.13866** | 0.07728 | 0.06720 | 0.06579 | 0.05864 |
+| 10 | log-domain | 2.11 s | 0.15038 | **0.07488** | **0.06591** | **0.05796** | **0.05659** |
+| 25 | sqrt\|X\| [current] | **1.14 s** | **0.06637** | 0.04186 | 0.02049 | 0.01689 | 0.01621 |
+| 25 | log-domain | 1.91 s | 0.08609 | **0.03898** | **0.01972** | **0.01658** | **0.01595** |
+
+**It starts worse and ends better** -- consistently, at both ranks. Worse at
+epoch 0 (0.150 vs 0.139; 0.086 vs 0.066) yet ahead at every checkpoint from
+epoch 50 on, finishing 1.6-3.5% better. At rank 10 it reaches by epoch 1000
+(0.05796) what the current init needs 2000 for (0.05864).
+
+That pattern implies the log fit lands in a **better basin**, not merely a
+closer point -- which also says the `sqrt(|X|)` init is not optimal, despite
+being inherited from Wertz et al. and never questioned.
+
+**Why it is still not adopted:** the init costs 0.7-0.9 s more, and its
+advantage concentrates past epoch 500 -- a regime Sec. 19's discrepancy
+stopping no longer enters (it exits at ~300). At epoch 250 the gain is ~2%,
+which does not pay for the extra init time.
+
+**Worth revisiting** if the stopping rule changes, or for a
+maximum-accuracy run where the 1.6-3.5% better optimum matters more than
+0.9 s. The basin observation is the durable part.
