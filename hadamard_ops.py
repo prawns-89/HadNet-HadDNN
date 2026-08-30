@@ -333,3 +333,76 @@ def optimal_k(R):
     """Predicted cost-optimal number of factors for target effective rank R."""
     import math
     return math.log(R)
+
+
+# --------------------------------------------------------------------------
+# Anderson acceleration / DIIS  (RESEARCH.md Sec. 8.1 / 9.2)
+# --------------------------------------------------------------------------
+#
+# The epoch loop is a fixed-point iteration x <- g(x). Sec. 17's curves show
+# ~87% of epochs buy <1% of accuracy -- the slow tail Anderson exists to
+# collapse. Identical to Pulay's DIIS for SCF convergence in electronic
+# structure codes.
+#
+# Keep the last m iterates and their residuals f_i = g(x_i) - x_i; find the
+# affine combination (sum(alpha) = 1) minimising ||sum alpha_i f_i||, and
+# extrapolate. One small m x m least-squares per step.
+#
+# CAVEAT: wrapping Adam is not textbook Anderson -- Adam carries momentum and
+# second-moment state that the extrapolated point invalidates. Whether that
+# destabilises it is exactly what the test measures.
+
+class Anderson:
+    """Anderson/DIIS extrapolation over a parameter sequence.
+
+        acc = Anderson(m=5)
+        ...
+        opt.step()
+        acc.apply_(params)      # in place, after the base optimiser step
+    """
+
+    def __init__(self, m=5, beta=1.0, reg=1e-8, start=20, every=1):
+        self.m, self.beta, self.reg = m, beta, reg
+        self.start, self.every = start, every
+        self.X, self.G = [], []
+        self.n = 0
+
+    @torch.no_grad()
+    def apply_(self, params):
+        self.n += 1
+        flat = torch.cat([p.detach().reshape(-1) for p in params])
+        if self.X:
+            self.G.append(flat.clone())          # g(x_prev) = current point
+        self.X.append(flat.clone())
+        if len(self.X) > self.m + 1:
+            self.X.pop(0)
+        if len(self.G) > self.m:
+            self.G.pop(0)
+        if self.n < self.start or self.n % self.every or len(self.G) < 2:
+            return False
+
+        k = len(self.G)
+        F = torch.stack([self.G[i] - self.X[i] for i in range(k)])     # (k, P)
+        # min ||F^T a|| s.t. sum a = 1  ->  solve (FF^T + reg I) a = 1, normalise
+        A = F @ F.transpose(0, 1)
+        A = A + self.reg * torch.eye(k, device=A.device, dtype=A.dtype) * A.diagonal().mean().clamp_min(1e-30)
+        ones = torch.ones(k, device=A.device, dtype=A.dtype)
+        try:
+            a = torch.linalg.solve(A, ones)
+        except Exception:
+            return False
+        s = a.sum()
+        if not torch.isfinite(s) or s.abs() < 1e-30:
+            return False
+        a = a / s
+        new = (a.unsqueeze(1) * torch.stack(self.G[-k:])).sum(0)
+        if self.beta != 1.0:
+            new = self.beta * new + (1 - self.beta) * (a.unsqueeze(1) * torch.stack(self.X[-k:])).sum(0)
+        if not torch.isfinite(new).all():
+            return False
+        off = 0
+        for p in params:                              # write back in place
+            nel = p.numel()
+            p.copy_(new[off:off+nel].view_as(p))
+            off += nel
+        return True

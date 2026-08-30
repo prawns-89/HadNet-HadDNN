@@ -565,3 +565,50 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 21. Anderson acceleration / DIIS (RESEARCH.md Sec. 8.1) -- NOT A WIN as implemented
+
+The epoch loop is a fixed-point iteration with a long slow tail (Sec. 17), so
+Anderson/DIIS should collapse it. Measured on video, relative error at epoch:
+
+| rank | config | 100 | 250 | 500 | 1000 | 2000 | time | #extrap |
+|---|---|---|---|---|---|---|---|---|
+| 10 | none | 0.06993 | 0.06720 | 0.06620 | 0.06579 | **0.05864** | **5.56 s** | 0 |
+| 10 | m=3 every 1 | 0.17004 | 0.07262 | 0.06856 | 0.06446 | 0.06355 | 7.96 s | 1981 |
+| 10 | m=5 every 10 | **0.06676** | **0.06267** | **0.06125** | **0.06024** | 0.05967 | 5.98 s | 199 |
+| 25 | none | 0.03304 | 0.02049 | 0.01817 | 0.01689 | **0.01621** | **7.30 s** | 0 |
+| 25 | m=5 every 1 | 0.18234 | 0.04362 | 0.04228 | 0.02579 | 0.02428 | 16.47 s | 1981 |
+| 25 | m=5 every 10 | **0.02341** | 0.02558 | 0.01837 | 0.01705 | 0.01621 | 8.73 s | 199 |
+
+**Extrapolating every step is actively harmful** -- 2.4-5.5x worse error early
+and up to 2.3x slower. This is the predicted failure: Adam carries momentum and
+second-moment state that an extrapolated point invalidates, so the optimiser
+spends the next steps re-adapting. Textbook Anderson assumes a *stateless*
+fixed-point map.
+
+**Every 10 steps accelerates the early descent but does not persist.** At rank
+25 epoch 100 it reaches 0.02341 against the baseline's 0.03304 -- 29% better,
+roughly where the baseline gets by epoch ~200. By epoch 2000 both land on
+0.01621 exactly. Wall-clock is 8-20% *worse* from the extrapolation overhead.
+
+So as a drop-in it fails: no better final error, no less time.
+
+### Bug in this experiment: the damping arm is untested
+
+The `beta=0.5` row returned results **byte-identical** to `beta=1.0`, which is
+not plausible. Cause is in `Anderson.apply_`: `self.G[-k:]` and `self.X[-k:]`
+select the *same* elements (G is appended before X each call, so they differ by
+one in length but align at the tail). The damping therefore mixes a vector with
+itself. The residuals `F[i] = G[i] - X[i]` are correctly aligned, so the
+**beta=1.0 rows are valid**; only damping is untested. Fix is to mix against
+`X[-k-1:-1]`.
+
+### Where it might still pay
+
+The early-phase gain is real, and Sec. 19 now stops at ~300 epochs rather than
+2000. Being 29% better at epoch 100 is worth little when running to 2000, but
+could matter a lot when stopping early. **Next: Anderson every-10 combined with
+DiscrepancyStop tau=0.8** -- the one configuration where the acceleration lands
+in the regime that is actually used.
