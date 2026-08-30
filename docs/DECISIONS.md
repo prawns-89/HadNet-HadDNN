@@ -565,3 +565,44 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 20. Balancedness / gauge fixing (RESEARCH.md Sec. 8.2) -- REJECTED
+
+The cheap test of Sec. 1's premise: if the cross-Hadamard scaling symmetry is
+what wrecks Adam's conditioning, picking the canonical (balanced) representative
+each step should recover much of the benefit -- without a quotient-manifold
+rewrite.
+
+Implemented `balance_pair_` (equalise column norms of W with row norms of H),
+`balance_cross_` (equalise the two Hadamard factors' overall scale), and
+`balance_all_`. **Gauge invariance verified**: the reconstruction is preserved
+to 6.0e-08, and the worst within-pair norm ratio goes 999.4 -> 1.0000.
+
+Relative error at epoch, video:
+
+| rank | balancing | 100 | 250 | 500 | 1000 | 2000 | time |
+|---|---|---|---|---|---|---|---|
+| 10 | none | 0.06993 | 0.06720 | 0.06620 | 0.06579 | **0.05864** | **9.75 s** |
+| 10 | every step | 0.06991 | 0.06732 | 0.06616 | 0.06508 | 0.05867 | 9.98 s |
+| 10 | every 50 | 0.06984 | 0.06779 | 0.06621 | 0.05958 | 0.05853 | 9.36 s |
+| 25 | none | 0.03304 | 0.02049 | 0.01817 | 0.01689 | **0.01621** | **9.53 s** |
+| 25 | every step | 0.03328 | **0.04029** | 0.01830 | 0.01700 | 0.01623 | 10.23 s |
+| 25 | every 10 | 0.03244 | 0.02129 | 0.01815 | 0.01689 | 0.01621 | 11.54 s |
+| 25 | every 50 | 0.03331 | **0.04431** | 0.01817 | 0.01691 | 0.01625 | 11.48 s |
+
+**No benefit at any rank or frequency**, and 7-21% *slower* from the extra
+norms. Worse, balancing every step or every 50 causes a visible mid-run
+excursion at epoch 250 (0.040 / 0.044 against a 0.020 baseline) -- rescaling
+invalidates Adam's second-moment estimates, so the optimiser has to re-adapt.
+
+**What this means for Sec. 1.** Either (a) the symmetry is real but a canonical
+representative is not enough -- you need the actual metric, i.e. K-FAC
+(Sec. 8.3) or the full Riemannian formulation; or (b) the conditioning story
+does not bind for this problem at these sizes. This experiment cannot separate
+those, but it does remove the cheap shortcut: **Sec. 1 cannot be skipped via
+Sec. 8.2.** If the Riemannian direction is pursued, it has to be the real thing.
+
+Kept in `hadamard_ops.py` (correct, tested, off by default) since Sec. 18's
+Stiefel and Sec. 9.3's DMRG canonical form would both reuse the machinery.

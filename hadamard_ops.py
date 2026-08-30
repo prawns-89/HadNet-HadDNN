@@ -333,3 +333,63 @@ def optimal_k(R):
     """Predicted cost-optimal number of factors for target effective rank R."""
     import math
     return math.log(R)
+
+
+# --------------------------------------------------------------------------
+# Gauge fixing by balancing  (RESEARCH.md Sec. 8.2 / 9.7)
+# --------------------------------------------------------------------------
+#
+# The parameterisation has two scaling symmetries that leave the reconstruction
+# untouched but wreck the conditioning Adam sees:
+#
+#   within a pair   (W, H) -> (W D, D^-1 H)              D diagonal, r x r
+#   across pairs    (M1, M2) -> (Dr M1 Dc, Dr^-1 M2 Dc^-1)   "cross-Hadamard"
+#
+# arXiv:2606.01216 divides these out with a quotient-manifold optimiser. This is
+# the cheap version: after each step, pick the canonical representative of the
+# orbit. Two norms and a rescale per factor -- no retractions, no metric.
+#
+# If this recovers most of the benefit, the full Riemannian rewrite is not
+# needed. That is the point of testing it first.
+
+@torch.no_grad()
+def balance_pair_(W, H, eps=1e-12):
+    """Equalise column norms of W with row norms of H, in place.
+
+    For each rank index j the product contributes w_j h_j^T, invariant under
+    (w_j, h_j) -> (c w_j, h_j / c). The balanced choice ||w_j|| = ||h_j|| is
+    the unique minimiser of ||w_j||^2 + ||h_j||^2 on the orbit, and is the
+    best-conditioned representative.
+    """
+    wn = W.transpose(0, 1).flatten(1).norm(dim=1) if W.ndim > 2 else W.norm(dim=0)
+    hn = H.flatten(1).norm(dim=1) if H.ndim > 2 else H.norm(dim=1)
+    c = ((hn + eps) / (wn + eps)).sqrt()
+    shape_w = (1, -1) + (1,) * (W.ndim - 2)
+    shape_h = (-1, 1) + (1,) * (H.ndim - 2)
+    W.mul_(c.view(shape_w))
+    H.div_(c.view(shape_h))
+
+
+@torch.no_grad()
+def balance_cross_(W1, H1, W2, H2, eps=1e-12):
+    """Equalise the overall scale of the two Hadamard factors.
+
+    (M1, M2) -> (s M1, M2 / s) leaves M1 o M2 unchanged. Choosing s so the two
+    have equal Frobenius norm removes the cross-Hadamard scale freedom, the
+    symmetry arXiv:2606.01216 identifies as the conditioning culprit.
+    """
+    n1 = (W1.norm() * H1.norm()).sqrt()
+    n2 = (W2.norm() * H2.norm()).sqrt()
+    s = ((n2 + eps) / (n1 + eps)).sqrt()
+    W1.mul_(s); H1.mul_(s)
+    W2.div_(s); H2.div_(s)
+
+
+@torch.no_grad()
+def balance_all_(factors, cross=True):
+    """Full gauge fix: balance within each pair, then across pairs."""
+    for W, H in factors:
+        balance_pair_(W, H)
+    if cross and len(factors) == 2:
+        balance_cross_(factors[0][0], factors[0][1],
+                       factors[1][0], factors[1][1])
