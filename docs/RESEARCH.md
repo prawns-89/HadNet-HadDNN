@@ -3274,6 +3274,151 @@ the `κ` figure is loose.
 
 ---
 
+## 49. Re-measured in the paper's regime (r ∈ {40,100,200}, full-rank data) — most of §40–§48 is out of regime
+
+**The whole §40–§48 chain was measured at r=10–20 on natural images.** The
+paper's target is high inner rank on **full-rank** tensors (the `n×n×n×n`
+complexity goal, `DECISIONS.md` §6; the aim is inner rank ~200). Re-run there,
+the picture changes.
+
+### Convergence — the basin trap is a low-rank artefact
+
+Full-rank synthetic, `svd_initialize` + Adam(`lr=0.1`, ×0.1 decay):
+
+| data | r | final rel err | epochs to rel<0.05 |
+|---|---|---|---|
+| full-rank 100×100 | 40 | **0.0000** | — |
+| full-rank 256×256 | 100 | **0.0000** | — |
+| full-rank 256×256 | 150 | **0.0000** | — |
+| full-rank (256,256,20) | 100 | 1e-5 | 413 |
+| full-rank (256,256,20) | **200** | **1e-6** | **127** |
+| full-rank (256,256,20) | 40 | 0.30 (stuck) | never |
+
+At the target rank HadNet **converges straight to machine precision, fast**
+(r=200: 127 epochs). §41/§44/§45/§48's "basin trap / BCD beats HadNet / Adam
+can't escape" is a **low-rank, structured-image** phenomenon — it does not
+occur at the paper's operating point. The one residual stuck case here (r=40 on
+`(256,256,20)`) is **under-rank**, not a saddle: perturbing the init
+(§49-style) moves it 0.3047 → 0.3039, i.e. nothing. §49's perturbation fix is
+specific to the near-degenerate-init image regime and does **not** generalise.
+
+### Per-epoch cost — the anatomy shifts with rank
+
+`(256,256,20)` full-rank, RTX 4050, per training step:
+
+| r | step (ms) | backward % | Adam-step % | bf16x | `torch.compile`x | fused-Adam | peak mem |
+|---|---|---|---|---|---|---|---|
+| 40  | 0.91 | 57% | 19% | 1.07 | 1.11 | — | 66 MB |
+| 100 | 1.47 | 48% | 33% | 1.19 | 1.18 | — | 130 MB |
+| 200 | 2.79 | 44% | **41%** | 1.22 | 1.22 | **1.20x** | 243 MB |
+
+- **`torch.compile` is 1.11–1.22x here, not 0.97x.** §33/§35's "compile is a
+  dud on the 4050" was an r=10 artefact — at r≥100 the GEMMs are big enough
+  that inductor's fusion pays. Reinstate §6 (CUDA graphs / compile) as a real
+  lever *at the target rank*.
+- **Backward drops from 75% (r=10, §33) to 44% (r=200).** §33's "backward is
+  the ceiling, forward micro-opt caps at 25%" **inverts**: at r=200 the
+  **Adam step is 41%** of the epoch. New lever: `torch.optim.Adam(fused=True)`
+  — one argument, measured **1.20x** at r=200 (2.89 → 2.41 ms); `foreach` does
+  nothing. TF32 on top: 2.41 → 2.07 ms (another 1.16x, negligible accuracy
+  cost).
+- **bf16 is 1.07–1.22x here, not the 1.63x of §35.** That 1.63x was Carphone
+  (p=180); the bf16 benefit is shape-dependent, not rank-dependent. State it
+  per-shape, never as a single number.
+- **Best measured stack at r=200: fused Adam × TF32 × compile ≈ 1.7x**, all
+  zero-maths-risk, all *more* effective than at low rank.
+
+### Memory is a hard wall at the 4th-order target
+
+`svd_initialize` + one training step at **r=200**, fused Adam:
+
+| shape | result |
+|---|---|
+| (256,256,20) | 243 MB — fine |
+| (200,200,50,50) | **OOM** (6 GB card) |
+| (256,256,40,40) | **OOM** |
+
+At the paper's `n×n×n×n` scale with large `p`, r=200 factors + 2× Adam state +
+the `h_prod` intermediates exceed 6 GB. **§14 (quantise) and §5 (share along
+`p`) stop being ratio-optimisations and become feasibility requirements** —
+and `GPU.md` §6.5's "memory is not a constraint" was an r=10 statement that
+reverses here. Gradient checkpointing (dismissed in §33 as "wrong direction")
+is back on the table.
+
+### Init cost — now a real fraction
+
+`svd_initialize` at r=200 on `(256,256,20)`: **0.24 s**. Convergence: 127
+epochs × 2.8 ms ≈ **0.36 s**. Init is **~40% of the run** — not the "1–3%"
+(`DECISIONS.md` §3, measured at 57 s / r=10). §31's stale-baseline gap is worse
+than stated: at high rank + fast convergence the init dominates. And
+randomized/block-Krylov SVD (§16) is **unusable** — `r=200 > min(m,n)/2` for
+any slice under ~800 wide, so the `O(n⁵)→O(n⁴)` story needs `n ≫ 800` to apply.
+
+### (a) Composability
+
+At r=200 the zero-risk systems levers **compose and grow**: `fused Adam (1.20x)
+× TF32 (1.16x) × compile (1.22x) × bf16` — and unlike §35's low-rank stack
+(dominated by early stopping), here they multiply cleanly because no single one
+dominates (backward 44%, Adam 41%). Early stopping still composes but converges
+in ~130 epochs already.
+
+### (b) Contradictions with earlier sections
+
+1. **§33 ("backward = 75%, forward opt caps at 25%")** — inverts at r=200
+   (backward 44%, Adam 41%). The optimisation target moves from the autograd
+   graph to the optimiser step.
+2. **§35 ("bf16 1.63x", "compile 0.97x", "h_prod 41x")** — all three are
+   shape/rank-specific. compile flips positive; bf16 shrinks to ~1.2x on
+   low-`p` shapes; the h_prod Amdahl share falls further as Adam grows.
+3. **§40–§48's entire basin/conditioning thread** — measured on out-of-regime
+   data. At r≥100 full-rank, HadNet hits machine precision with no basin
+   trouble. Keep those sections as a study of the *low-rank image* regime;
+   do not carry their conclusions to the rank-200 goal.
+4. **`GPU.md` §6.5 / §33 ("memory is free / checkpointing is wrong direction")**
+   — reversed: OOM at r=200 for the 4th-order shapes.
+
+### (c) Further approaches — the rank-200 line
+
+- **`fused=True` Adam** — done, 1.20x, one argument. Ship it.
+- **CUDA graphs** (`torch.compile(mode="reduce-overhead")`) — untested at
+  r=200; the fixed-shape loop is ideal and compile already pays 1.22x.
+- **Mixed fp16/bf16 factor *storage*** (not just autocast) — halves the 3.9 GB
+  Adam+param footprint that OOMs.
+- **8-bit Adam** (`bitsandbytes`) — Adam state is 2/3 of the memory at r=200;
+  8-bit states cut it 4x.
+- **Rank as the sweep, `r²` as the theory** — measure `error(r)` on full-rank
+  data to find the smallest `r` that hits `<1e-4`; §3's `k`-factor then lets
+  that `r` drop further (`r^k` effective).
+
+### (d) Gap + mitigation
+
+**Gap.** Every session measurement before this section, and much of
+`DECISIONS.md` (§11 plateau, §12 early-stop 3x, §15 kernel speedups, §16
+noise-floor), is at **r=10–25**. The paper's contribution lives at **r=40–200
+on full-rank data**, where convergence, cost anatomy, memory, and init-share
+all differ. The `docs` describe a regime the method is not aimed at.
+
+**Mitigation.** Re-run the `DECISIONS.md` headline experiments — the §3 timing
+table, the §11 convergence curve, the §12 early-stop measurement — at
+r ∈ {40, 100, 200} on the full-rank `(100,100,10)` / `(100,100,10,10)` tensors
+the paper actually uses. Tag every existing number with its rank. Anything
+measured only at r≤25 is provisional for the paper's claims.
+
+**Open question to argue about.** Does early stopping (`DECISIONS.md` §12, "3x,
+87% of epochs wasted") even apply at r=200, where convergence to 1e-6 takes
+~130 epochs with no visible plateau? The "wasted tail" may be an r=10 artefact
+of fitting *compressible* data at *insufficient* rank — the opposite of the
+paper's setting.
+
+**Failure mode.** These re-measurements are on synthetic iid-Gaussian
+full-rank tensors. The paper also reports real video/image at r≤25 (Table 17),
+where the §40–§48 low-rank findings *do* apply. The method has two regimes —
+high-rank full-rank (converges to ~0) and low-rank real-media (basin-limited) —
+and a claim or optimisation valid in one may be void in the other. Every result
+needs its regime stated.
+
+---
+
 ## Suggested order (revised — supersedes the list below)
 
 1. **GPU end-to-end baseline** — nothing can be claimed without it (Sec. 10, row 1).
