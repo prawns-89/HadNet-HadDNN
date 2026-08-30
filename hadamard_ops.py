@@ -333,3 +333,54 @@ def optimal_k(R):
     """Predicted cost-optimal number of factors for target effective rank R."""
     import math
     return math.log(R)
+
+
+# --------------------------------------------------------------------------
+# Log-domain / cepstral reformulation  (RESEARCH.md Sec. 9.1)
+# --------------------------------------------------------------------------
+#
+# In log space the Hadamard product becomes a sum:
+#
+#     log|X| ~ log|W1 H1| + log|W2 H2|
+#
+# But note what that implies. If the two log-terms are each allowed to be
+# low-rank IN LOG SPACE, their sum is just a single low-rank matrix, and the
+# split is arbitrary. So the log-domain model is NOT a reformulation of the
+# Hadamard decomposition -- it is a different model class:
+#
+#     X ~ sign(X) * exp(L),     L low-rank
+#
+# (log-bilinear / exponential-family PCA). It is worth testing anyway, because:
+#
+#   1. The scaling symmetry that arXiv:2606.01216 blames for the conditioning
+#      becomes an ADDITIVE rank-1 shift  (log d_r) 1^T + 1 (log d_c)^T, which a
+#      single rank-1 component absorbs. The pathology disappears by construction.
+#
+#   2. Fitting L in log space is ORDINARY low-rank approximation, so it has a
+#      CLOSED FORM -- the truncated SVD of log|X|. No optimiser, no learning
+#      rate, no epochs. It deletes k entirely rather than reducing it.
+#
+# The catch: this minimises error in LOG space, not in the original space, so
+# the reconstruction is not optimal for the reported Frobenius metric. Whether
+# that costs more than the ~176x it saves is the empirical question.
+
+def log_domain_fit(X, r, eps=1e-6, randomized=True, niter=4):
+    """Closed-form log-domain low-rank fit:  X ~ sign(X) * exp(L), rank(L)=r.
+
+    One truncated SVD of log|X|. No iteration.
+    Returns (reconstruction, L_factors) where L = U @ V.
+    """
+    nb = X.ndim - 2
+    Xt = X.permute(*range(2, X.ndim), 0, 1)               # (*p, m, n)
+    sgn = torch.sign(Xt)
+    L = torch.log(Xt.abs().clamp_min(eps))
+    m, n = L.shape[-2], L.shape[-1]
+    q = min(r + 10, min(m, n))
+    if randomized and r < min(m, n) // 2 and niter * q < min(m, n):
+        U, S, V = torch.svd_lowrank(L, q=q, niter=niter)
+        Lr = (U[..., :, :r] * S[..., :r].unsqueeze(-2)) @ V[..., :, :r].transpose(-2, -1)
+    else:
+        U, S, Vh = torch.linalg.svd(L, full_matrices=False)
+        Lr = (U[..., :, :r] * S[..., :r].unsqueeze(-2)) @ Vh[..., :r, :]
+    rec = sgn * torch.exp(Lr)
+    return rec.permute(nb, nb + 1, *range(nb))

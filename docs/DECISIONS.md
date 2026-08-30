@@ -565,3 +565,59 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 23. Log-domain / cepstral reformulation (RESEARCH.md Sec. 9.1) -- REJECTED as a method
+
+### First, what the reformulation actually is
+
+RESEARCH.md framed it as `log|X| ~ log|W1 H1| + log|W2 H2|`, turning the
+multiplicative quartic additive. But if both log-terms are low-rank *in log
+space*, their sum is a single low-rank matrix and the split is arbitrary. The
+model collapses to
+
+    X ~ sign(X) * exp(L),    L low-rank
+
+i.e. log-bilinear / exponential-family PCA -- **a different model class, not
+the Hadamard decomposition rewritten.** Two properties made it worth testing:
+
+1. The scaling symmetry becomes an additive rank-1 shift
+   `(log d_r)1^T + 1(log d_c)^T`, absorbed by one rank-1 component. The
+   pathology Sec. 1 fights disappears **by construction** -- which matters now
+   that Sec. 20 closed the cheap gauge-fix route.
+2. Fitting `L` in log space is ordinary low-rank approximation, so it has a
+   **closed form**: the truncated SVD of `log|X|`. No optimiser, no learning
+   rate, no epochs. It deletes `k` rather than reducing it.
+
+### Measurement (video, matched parameter count)
+
+| method | rank | params | time | err(noisy) | err(CLEAN) |
+|---|---|---|---|---|---|
+| HadNet (2000 ep) | 10 | 1,036,800 | 5.59 s | **0.05864** | **0.05660** |
+| log-domain | 20 | 1,036,800 | **0.57 s** | 0.12438 | 0.12341 |
+| HadNet (2000 ep) | 25 | 2,592,000 | 7.20 s | **0.01621** | **0.02361** |
+| log-domain | 50 | 2,592,000 | **0.57 s** | 0.06107 | 0.06223 |
+
+**10-13x faster, but 2.1x worse error at rank 10 and 3.8x worse at rank 25** --
+and the gap widens with rank. At matched *error* it needs ~5x the rank
+(log-domain r=50 ~ HadNet r=10), so the time win is cancelled and compression
+gets much worse.
+
+### Why -- and it is the predicted reason
+
+The fit minimises error in **log space** while being scored in **Frobenius**.
+`log` has large derivative near zero, so log space massively over-weights dark
+pixels and under-weights bright ones. Video has large dark regions clamped at
+`eps=1e-6`, so the fit spends its rank budget where the Frobenius metric barely
+cares. The mismatch is structural, not a tuning problem.
+
+**Fix if revisited:** IRLS -- reweight the log-space least squares by `X^2` to
+approximate the Frobenius objective. That reintroduces iteration, but far less
+of it than 2000 epochs, and each step stays a closed-form weighted SVD.
+
+### The by-product worth keeping
+
+0.57 s to reach 0.124 is a **much better starting point than the current
+`sqrt(|X|)` SVD init**, and costs about half what that init does. Tested next
+as an initialiser for HadNet rather than a replacement for it.
