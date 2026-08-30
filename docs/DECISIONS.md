@@ -565,3 +565,51 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 19. Discrepancy-principle stopping (RESEARCH.md Sec. 9.4) -- ADOPTED
+
+Replaces `EarlyStop`, which Sec. 17 showed has no usable operating point. The
+scripts inject exactly `sigma*randn`, so the noise floor is analytic:
+
+    E||noise||_F = sigma * sqrt(N)
+
+**The prediction is exact.** For the video, `0.01*sqrt(3,732,480) = 19.32`,
+and the realised `||noise||_F` is 19.32. No tuning, no fitting.
+
+Error measured against BOTH targets -- the noisy tensor (what the paper
+reports) and the clean video (what we actually want):
+
+| rank | rule | epochs | time | err(noisy) | err(CLEAN) |
+|---|---|---|---|---|---|
+| 10 | none | 2000 | 5.57 s | 0.05864 | 0.05660 |
+| 10 | EarlyStop 1e-3 | 300 | 0.81 s | 0.06713 | 0.06532 |
+| 10 | **Discrepancy** | **2000 (never fires)** | 5.44 s | 0.05864 | 0.05660 |
+| 25 | none | 2000 | 7.23 s | 0.01621 | 0.02361 |
+| 25 | EarlyStop 1e-3 | 200 | 0.72 s | 0.03421 (+111%) | 0.03714 (+57%) |
+| 25 | **Discrepancy** | **237** | **0.85 s** | 0.02291 (+41%) | **0.02721 (+15%)** |
+
+**It strictly dominates EarlyStop** -- near-identical speed (0.85 s vs 0.72 s)
+at a third of the accuracy cost (+15% vs +57% on clean data).
+
+**And it self-disables correctly.** At rank 10 the residual never reaches the
+noise floor, so it runs the full 2000 epochs and costs nothing. The model is
+still underfitting there and the rule says so, with no rank-specific tuning.
+That is exactly the behaviour EarlyStop could not produce.
+
+### The finding underneath: the benchmark rewards fitting noise
+
+At rank 25, the full run gives **err(noisy)=0.01621 but err(CLEAN)=0.02361** --
+the reconstruction is *closer to the noise realisation than to the true video*.
+At rank 10 the ordering reverses (0.05864 noisy vs 0.05660 clean), i.e. no
+overfitting: there the model still lacks capacity to memorise noise.
+
+So at high rank the paper's reported metric is partly measuring how well the
+model memorised `0.01*randn`. Any headline comparison at rank 20+ is affected,
+and a method that overfits *harder* scores *better*. Combined with Sec. 16 (the
+noise pushes 17.79% of an MRI below zero and metrics are computed on clamped
+output), the noise injection deserves its own scrutiny.
+
+**Next:** sweep `tau` -- the +15% at rank 25 suggests the classical `tau=1`
+Morozov choice stops slightly early for this model.

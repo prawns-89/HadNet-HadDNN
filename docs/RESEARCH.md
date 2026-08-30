@@ -1215,6 +1215,2065 @@ answer is "HadDNN wins on real media".
 
 ---
 
+# Synthesis — what stacks, what fights, per-line coverage
+
+Sections 27+ stop proposing new ideas and start integrating the ones above:
+which compose, which contradict, and which line of attack is actually
+under-served. Session-measured numbers referenced below (RTX 4050, Carphone
+shape): **bf16 autocast 1.63x end-to-end, error unchanged**; **backward = 75%
+of an epoch**; **torch.compile 0.97x** (laptop GPU, too few SMs); **early
+stopping already cuts to ~300 epochs**, not 2000; **HadamardDNN 134.8M params,
+~half provably inert**.
+
+## 27. Composability map, contradiction list, and the `k` line in full
+
+### (a) What stacks — and why it multiplies rather than adds
+
+Four independent layers; wins within a layer compete, wins across layers
+multiply.
+
+| Layer | Members | Compose? |
+|---|---|---|
+| **Systems / precision** | `h_prod` batch (§4/lever 1, 9–41x), early stop (§12, ~3x), bf16 (session, 1.63x), TF32 (session, 1.11x, subsumed by bf16) | **Multiply** — orthogonal mechanisms (launch overhead / iteration count / arithmetic width). `torch.compile` (§6) does **not** join on this GPU. |
+| **Convergence (attack `k`)** | Anderson §8.1, Parareal §22, homotopy §17, rank-ladder §11, multigrid §12, streaming §13, SWA/restarts (below) | Compose only as a **schedule with diminishing returns** — each assumes the previous has not already flattened the tail. Post-early-stop that tail is ~300 epochs, not the §11 "87% of 2000". |
+| **Geometry (attack conditioning)** | Stiefel-`W` §18 **+** balancedness/Sinkhorn §8.2/§9.7 (kill GL, then diagonal — these two *do* stack); K-FAC §8.3 / Riemannian §1 / natural grad §9.5 are **alternatives**, pick one | Split: one stacking pair, the rest mutually exclusive. |
+| **Model structure** | factor-sharing along `p` §5/§8.4, boosting sum §20, `k`-factor product §3 — all compose (share within each of `s` terms of a `k`-product); quantise+code §14/§19 is a post-process on whatever results | **Compose**, and the parameter counts multiply down. |
+
+The headline stack with everything measured or low-risk:
+`bf16 (1.63x) x early stop (3x) x h_prod batch (already in)` — none touches the
+maths, all confirmed, ~5x over the pre-optimisation baseline before any
+research-grade change.
+
+### (b) What contradicts — pairs that cannot both be run naively
+
+1. **Randomized/block-Krylov init (§4/§16) vs discrepancy-principle stopping
+   (§9.4).** The init is deliberately approximate (delta 1.7e-3, `DECISIONS.md`
+   §13); the stop rule compares the residual to the noise floor
+   `0.01·sqrt(N)`. If init error ≳ noise floor the rule cannot tell "converged"
+   from "bad init". Fix: tighten `niter` when discrepancy stopping is on —
+   they trade against each other.
+2. **bf16 (session) vs any absolute-threshold stop (§9.4).** bf16's ~1e-2
+   relative rounding on the residual sits above the `0.01` noise floor in the
+   last decimals; an absolute stop reads bf16 rounding as irreducible residual.
+   bf16 is safe with *relative*-improvement early stopping (§12), not with a
+   noise-floor stop. Contradiction is with §9.4 specifically, not §12.
+3. **Stiefel-`W` §18 vs Riemannian §1 vs balancedness §8.2** all target the
+   same symmetry group. Two at once double-counts and can over-constrain
+   (§18's open question). One primary + optional §8.2 diagonal cleanup.
+4. **Log-domain §9.1 + quantise §14.** Quantisation error in log-space is
+   *multiplicative* in linear space; §14 already found factor rounding
+   compounds multiplicatively through the `∘`. Stacking them is
+   multiplicative-on-multiplicative — the bit-allocation derivation §14 asks
+   for becomes mandatory, not optional.
+5. **Streaming §13 vs factor-sharing along `p` §5.** Streaming *produces*
+   warm-started per-slice factors; sharing wants *one* basis across `p`. The
+   pure forms are opposites; §13's note 3 (shared base + per-slice correction)
+   is the only reconciliation and it is not free.
+6. **Data-dependence is opposite for two families.** AMP §21 and GNC §17
+   "work on `random-tensor`, wobble on Carphone"; multigrid §12 and streaming
+   §13 "gain on Carphone, nothing on `random-tensor`". A portfolio should
+   **route by data type**, not stack these blindly.
+7. **Coordinate-net factors §8.4 vs the HadDNN finding §26.** §26 measured that
+   `MLP(learned_constant_vector)` is 130x bloat with ~half the params inert.
+   §8.4 only escapes that trap if its MLP input is a genuine varying coordinate
+   — a design constraint §8.4 must state explicitly or it *is* §26.
+
+### (c) The `k` line of approach — full enumeration
+
+Everything aimed at epoch count, in the doc and not:
+
+- **In the doc:** Anderson §8.1, Parareal §22, homotopy §17, rank-ladder §11,
+  multigrid §12, streaming §13, discrepancy stop §9.4, K-FAC §8.3, Riemannian
+  §1, GN-Schur §15, AMP §21, ADMM §25, boosting §20 (`s` easy fits vs one hard).
+- **Not yet in the doc:**
+  - **Cyclic LR with warm restarts (SGDR).** The code's schedule only *decays*
+    LR ×0.1 on plateau and never restarts (`DECISIONS.md` §4.2). A restart is
+    the standard escape from the §11 plateau; one extra schedule parameter.
+  - **Stochastic weight averaging over the wasted tail.** Instead of stopping
+    at ~300 epochs, average epochs ~200–300. `DECISIONS.md` §11 says the tail
+    buys <1%; SWA *extracts* that 1% as variance reduction instead of
+    discarding it. Near-zero cost, composes with early stopping.
+  - **Gradient-noise-scale measurement.** The loss is full-batch (every `mnp`
+    entry each epoch). If the gradient-noise scale is low there is no reason
+    not to take larger steps — measure it before assuming `lr=0.1` is near the
+    ceiling.
+  - **Condition-number-matched momentum (Polyak heavy ball).** One scalar,
+    cheaper than Anderson, optimal for the locally-quadratic tail.
+
+### (d) Gap + mitigation
+
+**Gap.** The "87% of epochs wasted" motivation (`DECISIONS.md` §11) was
+measured at fixed `k=2000`, *before* early stopping was wired in. Session
+measurement: the fit now runs **~300 epochs**. Every `k`-attacking section is
+being justified by a stale number — the live question is how much of *those
+300* epochs is wasted, and it may be very little.
+
+**Mitigation.** Re-run the §11 convergence-curve table with `EarlyStop` active,
+at Carphone and MRI shapes, and recompute the compute-vs-accuracy rows. If
+~300 epochs is already near the knee, the entire convergence layer (§8.1, §11,
+§12, §13, §17, §22) has little left to attack and priority moves wholly to
+per-epoch cost — bf16, factor-sharing (§5), lower rank — and to init cost,
+which is a larger fraction of a 0.7 s run than of a 57 s one.
+
+**Open question to argue about.** Is `k` still the dominant lever *after* early
+stopping + bf16? At ~300 epochs × ~2.3 ms (bf16) ≈ 0.7 s, the randomized-SVD
+init and per-epoch Python/autograd overhead may now dominate. The profiling
+target is the 0.7 s run, not the paper's 57 s one — and no section yet is
+written against that regime.
+
+**Failure mode.** Stacking every `k`-attack (Anderson + restart + homotopy +
+ladder + SWA) adds interacting hyperparameters — Anderson depth, restart
+period, `γ` schedule, rank schedule, averaging window. Tuning them can cost
+more researcher-time than the epochs saved, and each adds its own failure mode.
+A portfolio of two (early stopping + one accelerator) is likely the knee of
+*that* curve too.
+
+---
+
+## 28. The `p`-scaling line — sharing, and why it may buy compression without speed
+
+`DECISIONS.md` §2: Carphone is **1.04M parameters for 3.73M entries, ratio
+3.6x**, because all four factors carry the full `p` dimension. This section
+integrates every approach aimed at that.
+
+### (a) What stacks
+
+The `p`-scaling attacks form a **pipeline that multiplies the parameter count
+down**, each stage operating on the output of the last:
+
+1. **Share** (§5): replace `W1 ∈ R^{m×r×p}` with `Basis[mr, s] · Coeff[s, p]`
+   — parameters `mrp -> s(mr + p)`.
+2. **Constrain the coefficients** (§9.11 DCT idea, applied along `p`): force
+   `Coeff` to a few low-frequency modes — `s·p -> s·f`, `f << p`.
+3. **Delta + entropy-code** (§19): store `Coeff` as differences along `p` and
+   arithmetic-code them.
+4. **Quantise** (§14): the whole thing at `b` bits.
+
+Stages 1–2 are model structure (change what is trained); 3–4 are storage
+(post-process). They compose because each shrinks a different dimension of the
+same object. `k`-factor (§3) and boosting (§20) are **orthogonal** — they act
+on the `(m,n)` rank, not on `p`, so they neither help nor hurt this pipeline.
+
+### (b) What contradicts
+
+1. **Sharing (§5) worsens the §1 conditioning it is separate from.** A shared
+   basis is used by all `p` slices, so its gradient is the *sum over `p`* of
+   per-slice gradients — larger dynamic range, so the cross-Hadamard scaling
+   symmetry (§1) gets **more** ill-conditioned, not less. §5 (structure) and
+   §8.2/§18 (geometry) stop being independent: sharing may *require* the
+   gauge-fixing, where an unshared factor tolerated skipping it.
+2. **Sharing (§5) vs quantising (§14).** Each shared basis entry is used `p`
+   times, so a quantisation error there is amplified `p`-fold in the
+   reconstruction, against once for an unshared factor. The two compression
+   levers fight: sharing makes the factors far more quantisation-sensitive,
+   so the §14 bit budget must rise exactly where §5 cut the parameter count.
+3. **Sharing (§5) vs streaming (§13)** — noted in §27(b), sharpened here:
+   sharing assumes `p`-*stationarity*, streaming assumes `p`-*drift*. Real
+   video is neither; it is *slowly varying*, whose correct model is "shared
+   basis + smooth per-slice coefficients" — i.e. stage 1+2 of the pipeline
+   above, which is what reconciles them.
+4. **Rank ladder (§11) vs sharing.** `s` (shared-basis width) is a second
+   rank-like knob beside `r`. Growing both is a 2-D schedule with coupling —
+   raising `r` changes the `mr` axis the basis spans, so a basis fitted at
+   `r=10` does not transfer up the ladder unchanged.
+
+### (c) Further approaches on the `p` line
+
+- **In the doc:** tie/factorise/shared-basis §5, coordinate-MLP §8.4 (only if
+  the input is a real coordinate, per §27(b)7), streaming §13, delta+code §19.
+- **Not yet in the doc:**
+  - **Tensor-train / tensor-ring of the factor tensor itself.** Treat
+    `W1 ∈ R^{m×r×p}` as a 3-way tensor and TT-decompose along `(m, r, p)`:
+    parameters `mrp -> (m + r + p)·R_tt`. This is the "factorise along `p`"
+    option §5 lists but never develops; Kolda & Bader (already cited in §5) is
+    the reference.
+  - **Shot-clustered factor sets.** k-means the `p` slices (on frame content),
+    one factor set per cluster, a cluster id per slice — between pure sharing
+    (1 group) and per-slice (`p` groups). Directly addresses `DECISIONS.md`
+    §2's "consecutive frames highly correlated" and §13's scene-cut failure
+    mode.
+  - **One unfolding SVD for the init.** A shared-basis init needs *one* SVD of
+    the mode-1 unfolding (`m × np`), not `p` per-slice SVDs. Cheaper init
+    (`DECISIONS.md` §3, §6's `n^5` term) that *also* directly yields the shared
+    basis — init and structure solved together.
+  - **Low-rank + sparse split along `p`** (robust-PCA style):
+    `W1[:,:,t] = L[:,:,t] + S[:,:,t]`, `L` shared low-rank, `S` sparse
+    per-slice corrections for the few slices that genuinely differ. Handles
+    §13's error-accumulation-at-cuts structurally rather than with keyframes.
+
+### (d) Gap + mitigation
+
+**Gap.** The `p`-redundancy is *asserted* (`DECISIONS.md` §2, §5) but never
+*measured*. Nobody has computed the numerical rank of the mode-3 (`p`)
+unfolding of Carphone. If 180 slices are effectively rank ~15, a shared basis
+with `s ≈ 15` captures everything and the ~6x parameter cut is real; if it is
+effectively rank ~120, sharing barely helps and only clustering or streaming
+can.
+
+**Mitigation.** One plot: SVD the `p`-mode unfolding (`144·144 × 180`) of the
+Carphone tensor, look at where the singular values fall off. Ten minutes,
+decides which of the §5 sub-options is worth building and rules out the others.
+Repeat for MRI/`random-tensor` to confirm the image-vs-random split predicted
+in §12/§13/§21 shows up here too.
+
+**Open question to argue about.** Does `p`-sharing help **wall-clock** at all,
+or only the **compression ratio**? Per-epoch cost is `O(k·r·mnp)` no matter how
+`W` is parameterised — the residual and its gradient still touch every `mnp`
+entry, and §27 measured that backward is **75% of the epoch**. Sharing shrinks
+the *parameter* gradient (fewer numbers for Adam) but not the *residual*
+computation. So §5 may deliver its stated goal (compression — `DECISIONS.md`
+§5) with near-zero speed gain, which demotes it on a speed-priority ordering
+and promotes it on a ratio-priority one. The two goals want different section
+orders.
+
+**Failure mode.** A shared basis is a bottleneck: if two slices genuinely need
+different `r`-dim subspaces (fast motion, a cut), a width-`s` shared basis
+represents neither well and the error floor rises for **all** `p` slices, not
+just the hard ones — cross-slice contamination. The low-rank+sparse split
+mitigates it but adds the sparse-part solve to every epoch.
+
+---
+
+## 29. The conditioning-and-symmetry line — and whether Adam already caps its ceiling
+
+The cross-Hadamard scaling symmetry (§1) and the plateau it is blamed for
+(`DECISIONS.md` §11: 87% of epochs, <1% gain) motivate §1, §8.2, §8.3, §9.1,
+§9.3, §18. This section asks whether that layer is real leverage or a story.
+
+### (a) What stacks
+
+- **§18 (Stiefel-`W`) + §8.2/§9.7 (Sinkhorn balancing) is the only truly
+  composing pair.** The redundancy group is roughly `GL(r) x Diag(m) x
+  Diag(n)`; Stiefel-`W` quotients `GL(r)` down to `O(r)`, balancing fixes the
+  diagonal part, and what is left (`O(r)`, measure-zero) Adam handles. They
+  attack **disjoint** subgroups, so the gain is the product.
+- **§8.3 (K-FAC) sits on top of a gauge-fixed parameterisation**, not beside
+  it: §18/§8.2 flatten the redundant directions, K-FAC scales the rest. Adding
+  K-FAC *before* the gauge-fix wastes curvature estimation on directions that
+  are about to be removed.
+- **§9.1 (log-domain) does not stack with any of them — it replaces the
+  layer.** If the symmetry becomes an additive rank-1 shift that a single term
+  absorbs (§9.1), then §1/§8.2/§8.3/§18 have nothing left to do. It is a
+  one-of, not a component.
+
+### (b) What contradicts
+
+1. **§1 vs §18 vs §8.3 are three price points for one job.** §1 costs
+   `O((m+n)r^4)` per slice (§1's own open question: `10^4`/slice at `r=10`);
+   §18 is ~free (one batched QR); §8.3 is `r x r` solves. Running more than one
+   is not just redundant (§27(b)3) — it is paying twice at very different
+   rates. Escalation order: §18, then §8.3, then §1 only if both visibly fail.
+2. **§9.1 (log-domain) breaks the noise model the repo assumes.**
+   `DECISIONS.md` §16's additive `0.01·randn` becomes *heteroscedastic* in log
+   space — small `|X|` entries get enormous log-noise. Log-domain + the
+   existing **unweighted** Frobenius loss is inconsistent; it needs a weight
+   `∝ |X|²` to undo the transform's distortion. And §9.4's discrepancy stop,
+   whose threshold `0.01·sqrt(N)` is a linear-space scalar, is simply wrong in
+   log space.
+3. **The Lipschitz rejection (`DECISIONS.md` §11) is evidence against the whole
+   layer, not just the `1/L` step.** §11 concluded geometry-aware stepping was
+   "worse on both axes" partly because "Adam already adapts per-parameter from
+   gradient second moments, so dividing by `L` duplicates that and over-damps".
+   K-FAC (§8.3) and Riemannian (§1) also layer curvature onto/against Adam — if
+   that reasoning holds, they inherit the objection.
+
+### (c) Further approaches on this line
+
+- **In the doc:** §1, §8.2, §8.3, §9.1, §9.3, §18.
+- **Not yet in the doc:**
+  - **Spectral normalisation of the factors** (Miyato et al., GANs) — divide
+    each factor by its spectral norm each step; one power iteration per factor,
+    cheaper than a full Sinkhorn, fixes the scale ambiguity.
+  - **Fixed diagonal preconditioner from the init's singular values.** The SVD
+    init (§4) already returns `S`; use `S^{-1/2}` as a constant gradient
+    preconditioner for the whole run. Zero extra cost, targets exactly the
+    anisotropy the symmetry induces.
+  - **L2 penalty as soft balancing.** `λ(‖W‖² + ‖H‖²)` has a unique minimiser
+    on each scaling orbit — the balanced point. It does §8.2's job through the
+    loss, no projection step, one line. The soft counterpart of §8.2 / §18.
+  - **Name the symmetry coordinate.** Write `W = e^{a}·Ŵ`, `H = e^{-a}·Ĥ` with
+    `Ŵ,Ĥ` unit-norm and `a` a learned per-column scalar. The symmetry
+    direction becomes one explicit coordinate Adam moves freely — removed by
+    naming, not quotienting.
+  - **Normalise `M1`, `M2` before the product**, folding scale into a learned
+    gain — batch/layer-norm's trick, makes factor scale irrelevant by
+    construction.
+
+### (d) Gap + mitigation
+
+**Gap.** Nobody has *measured* that the landscape is ill-conditioned. §1
+asserts it from an external paper; `DECISIONS.md` §11's plateau is *consistent
+with* conditioning but equally with §12 (slow low-frequency mode), §17
+(non-convex basin), or just a too-small `lr`. Four explanations, one
+observation, zero measurements distinguishing them.
+
+**Mitigation.** At epoch ~250 (plateau onset, `DECISIONS.md` §11): (i) a few
+Hessian-vector products via Lanczos give the top and bottom eigenvalues —
+compute `κ`. `κ ~ 10^2` means Adam copes and the layer is low-value;
+`κ ~ 10^6` means the symmetry story holds and §18/§8.2 are justified. (ii)
+Measure `‖grad‖` and the angle between consecutive gradients at the plateau: a
+large oscillating gradient is conditioning (preconditioner helps); a tiny
+gradient is a genuine near-stationary point (only a better basin helps — §17,
+§11). One afternoon, and it tells you whether to build this whole layer.
+
+**Open question to argue about.** If the Lipschitz rejection's "Adam already
+adapts" reason is the true one, does using Adam *at all* cap the ceiling for
+every geometry-aware method here? The test: plain SGD + one geometry method
+(§8.2 or §8.3) vs Adam alone vs Adam + geometry. If SGD+geometry beats
+Adam+geometry, the conditioning layer only pays once Adam is dropped — which
+none of §1/§8.2/§8.3/§18 currently assume.
+
+**Failure mode.** Every gauge-fix (§8.2, §18, spectral-norm, explicit-scale)
+adds a per-step normalisation over factors that carry the `p` dim — the §4.1
+"180 tiny ops in a loop" hazard, and these ops need backward too. §27 measured
+backward is already **75% of the epoch**; a conditioning layer that adds
+10–20% per-epoch cost for a benefit `DECISIONS.md` §11 hints is marginal can
+come out **net negative** on wall-clock even if it reduces epoch count.
+
+---
+
+## 30. The compression-ratio line — the paper's stated goal, least-served axis
+
+Sec. 5 calls compression "the paper's actual application"; §24 shows it is
+never benchmarked as one. This section integrates every ratio-affecting
+approach.
+
+### (a) What stacks
+
+The stored size is `entries / (params · bits_per_param · code_efficiency)`.
+Three independent multipliers:
+
+| Multiplier | Approaches | Typical factor |
+|---|---|---|
+| `entries / params` | §5 sharing, §11 prune ("overshoot rank then prune") | 2–6x (§28's open question — unmeasured) |
+| `32 / b` bits per param | §14 quantise (→int8), bf16 storage (→16) | 2–4x |
+| `b / H` code efficiency | §19 delta + entropy code | 1.5–3x |
+
+They **multiply** — each acts on a different term. The paper reports **only the
+first, at fp32** (`DECISIONS.md` §3 "params" column), so stages 2–3 are an
+unclaimed ~4–12x sitting on the table. `k`-factor (§3) and boosting (§20) push
+the *wrong way* on term 1 (more params for more rank) — they belong on a
+rate–distortion curve, not a raw-ratio target.
+
+### (b) What contradicts
+
+1. **Run-to-convergence vs delta-coding (§19).** `DECISIONS.md` §16: the target
+   is ~18% out-of-range noise. The last epochs fit some of that noise into
+   high-frequency-along-`p` factor content, which **does not delta-code**.
+   Early stopping (§12) and discrepancy stopping (§9.4) keep the factors smooth
+   along `p` — they are *allies* of §19. Training to a tight tolerance is the
+   contradiction.
+2. **Boosting (§20) vs raw ratio.** Boosting adds terms to cut error — it
+   improves the RD curve at the high-quality end and *worsens* the bare ratio.
+   Only coherent if the target is a point on the RD curve, not "max ratio".
+3. **bf16 storage vs §14.** Storing bf16 factors is a free 2x, but int8
+   quantise (§14) is 4x and subsumes it. bf16 stays a *training* lever
+   (session: 1.63x) with no additional storage role once §14 is in.
+4. **Quantise (§14) vs share (§5)** — carried from §28(b): a shared entry used
+   `p` times amplifies its quantisation error `p`-fold, so term-1 and term-2
+   gains partially cancel; the §14 bit budget must rise where §5 cut params.
+
+### (c) Further approaches on this line
+
+- **In the doc:** quantise §14, delta+entropy-code §19, share §5, prune §11,
+  and §24 (the missing benchmark).
+- **Not yet in the doc:**
+  - **RD-optimal rank selection.** Replace the fixed sweep `[2,5,10,20,25]`
+    (`DECISIONS.md` §3) with a per-tensor `r` chosen on the RD knee — rank
+    where it buys the most PSNR per bit.
+  - **Learned entropy model (hyperprior, Ballé et al.).** Predict each factor
+    delta's distribution from its neighbours instead of a static arithmetic
+    coder — the modern neural-codec move, on top of §19.
+  - **Prune at the `r²` cross-term level.** `(W1 H1)∘(W2 H2)` has rank `r²`
+    (§3's argument); some of those `r²` column-pair products contribute
+    negligibly. Prune which `(i,j)` pairs to keep, not which `r` columns —
+    finer, and matched to the actual expressivity.
+  - **Differentiable rate penalty.** Add `λ·H(quantised factors)` (relaxed
+    estimate) to the loss so the fit minimises *coded size*, not just
+    reconstruction error — end-to-end RD optimisation, the neural-codec
+    standard.
+  - **Vector / product quantisation of factor columns.** Cluster the `r`-dim
+    column vectors, store indices (VQ/PQ from ANN search). `DECISIONS.md` §16's
+    bounded data → bounded columns → clusterable.
+  - **Coarse-init predictor + residual code.** Store a downsampled `X` (§12),
+    regenerate the coarse SVD init at decode time, code only the fine
+    correction — §12 × §19.
+
+### (d) Gap + mitigation
+
+**Gap.** There is no rate–distortion point for HadNet that a compression
+audience would recognise — not even against its own baselines. `DECISIONS.md`
+§3's table is `(time, Frobenius error)` per method per rank; "params" is an
+fp32 count, "error" is not PSNR-vs-bitrate.
+
+**Mitigation.** Post-process the **existing** Table-9 runs — no retraining.
+For each saved factor set: quantise to int8, entropy-code, count actual bytes,
+compute PSNR against the *clean* reference, plot `(bpp, PSNR)`. Adds the axis
+§24 needs from data already in hand, and reveals whether the tensor baselines
+(TSVD, TBCD…) or HadNet win once bits are counted honestly.
+
+**Open question to argue about.** Is the Hadamard model the right
+*representation* for compression, or only for low-Frobenius approximation?
+Decode is `(W1 H1)∘(W2 H2)` — two batched GEMMs + a multiply, ~0.8 ms for the
+whole Carphone tensor (session: forward = 763 µs). That is **fast decode**.
+Encode is a 0.7 s+ fit per tensor, against a codec's millisecond encode. So
+HadNet is a *slow-encode / fast-decode / Frobenius-optimal* method — the niche
+that wants exactly that (archival, one-shot compression of scientific tensors
+with no codec) should be named and benchmarked, instead of implying
+general-purpose media compression.
+
+**Failure mode.** Turning a 1-knob method (`r`) into a codec-grade pipeline
+(RD rank selection + entropy model + VQ + rate penalty) means a dozen knobs,
+each needing the RD curve re-measured, and the likely endpoint (§24) is still
+losing to x265. A half-built codec is worse than an honest "low-rank
+approximation, not a codec" framing with a fast-decode / archival pitch.
+
+---
+
+## 31. The init-cost line — now a bigger slice than the stale numbers say
+
+`DECISIONS.md` §6: the SVD init is the only super-quartic term (`O(n^5)`).
+Levers 2 / §13 took it to `O(n^4)` and 4.3x on GPU (`DECISIONS.md` §15). But
+"init is 1–3% of runtime" (§3) was measured against the 57 s run.
+
+### (a) What stacks
+
+- **§4 (Gaussian-sketch randomized), §16 (block-Krylov), §8.5 (ACA) are
+  alternatives, not a stack** — pick the cheapest that meets the accuracy the
+  descent needs, per shape.
+- **Init cost multiplies through everything that re-inits.** §11 (rank ladder)
+  re-inits per rung; §20 (boosting) per term; §13 (streaming) per slice unless
+  warm-started; §26 (distillation) feeds HadNet's init into HadDNN. A 5-rung
+  ladder × 3-term boost is 15 inits — the init fraction of `DECISIONS.md` §3
+  gets multiplied by the re-init count.
+- **§28's "one unfolding SVD" + §5 (shared basis) genuinely compose**: the
+  init method *produces* the structure. Same for **§17 (homotopy)** — the
+  `γ=0` additive fit *is* the init for `γ=1`, folding "init" into the
+  warm-start schedule.
+
+### (b) What contradicts
+
+1. **§16 (block-Krylov) vs the `sqrt(|X|)` transform it inits.** Block Krylov's
+   `1/q²` rate needs a spectral gap (§16's open question). `sqrt` is concave —
+   it compresses large singular values toward small ones, **flattening** the
+   spectrum, which is exactly where block Krylov degrades to the
+   power-iteration rate. §16 fights the parameterisation §4 uses.
+2. **§11 (rank ladder) wants exact init at inner rungs, randomized only at the
+   first.** Each rung re-inits from the *residual* (§11); randomized SVD has
+   poor *relative* accuracy when the target is low-energy, which a
+   post-previous-rung residual is. Cold `r=2` → randomized fine; `r=10` off an
+   `r=5` residual → exact (cheap anyway, small matrix). One method does not fit
+   all rungs.
+3. **§8.5 (ACA) vs §4's guarantee goal.** ACA is `O(mnr)` with no power
+   iterations, but greedy and heuristic — no probabilistic error bound. §4
+   explicitly wants to "replace 'seems fine' with a guarantee"; ACA trades
+   that away for speed.
+4. **§9.1 (log-domain) invalidates the `DECISIONS.md` §13 `niter` sweep.**
+   Log-domain SVDs `log|X|`, a different matrix with a different spectrum, so
+   the crossover `niter·q < min(m,n)` and the `niter=4` default must be
+   re-measured from scratch.
+5. **`DECISIONS.md` §14 inversion.** `real-world/` keeps `niter=24` because it
+   stays profitable at `min(m,n)=256`; §16 would reach that accuracy in ~6
+   passes — so block Krylov helps `real-world/` *more* than the tensor folders,
+   inverting the usual "tensor folders are the target" priority.
+
+### (c) Further approaches on this line
+
+- **In the doc:** randomized §4, block-Krylov §16, ACA §8.5, unfolding-SVD §28.
+- **Not yet in the doc:**
+  - **Compute one SVD at `r_max`, slice for every smaller rank.** The sweep
+    (`DECISIONS.md` §3) runs `r ∈ [2,5,10,20,25]`; a truncated SVD at `r=25`
+    already contains every smaller answer. ~5x off the sweep's total init cost.
+    The init-side of §11.
+  - **Skip init for warm-startable slices.** §13: slice `t>0` inherits slice
+    `t−1`; only slice 0 pays for an SVD → init cost `→ O(1/p)` of current.
+  - **Structured sketch (SRHT/SRFT).** §4/§16 use Gaussian sketches; a
+    subsampled randomized Hadamard transform is `O(mn log q)` vs `O(mnq)` —
+    marginal at Carphone, real at the `n^4` scale §6 targets.
+  - **Shared range-finder for the two SVDs.** `svd_initialize` does two SVDs
+    (`mat_simple`, `mat_signed = mat_simple · sign(X)` — same magnitudes). One
+    randomized range-finder `Q` from `mat_simple` can seed both, ~halving the
+    range-finding pass.
+  - **Learned init map** (§9.6 meta-learning, applied to init): a fast
+    downsampled-`X` → factors network, meta-trained across a corpus.
+
+### (d) Gap + mitigation
+
+**Gap.** Init-as-%-of-runtime has never been re-measured in the optimised
+regime. "1–3%" (`DECISIONS.md` §3) / "3.5%" (§5 bench) were against 57 s.
+After bf16 (session 1.63x) + early stopping (~300 epochs) the fit is ~0.7 s,
+while the init still runs two batched SVDs of `180×144×144` — plausibly now
+10–25% of the run. Same stale-baseline error as §27's `k`-gap.
+
+**Mitigation.** Profile the current bf16 + early-stop fit; break out init vs
+epoch loop vs Python/autograd overhead. If init is now >15% of 0.7 s, §16 and
+"one SVD at `r_max`" jump the priority order; if still <5%, they stay low.
+
+**Open question to argue about.** Does the init even need to be good anymore?
+The `svd_initialize` docstring justifies approximation because it "only seeds a
+2000-epoch descent" — but at ~300 early-stopped epochs the descent has far less
+room to repair a bad start. Test: random vs SVD vs randomized-SVD init, all
+with early stopping, compare *final* error. If random init + 300 epochs ≈ SVD
+init + 300 epochs, the whole init line is low-value; a gap means init quality
+now matters more than the docstring assumes.
+
+**Failure mode.** "One SVD at `r_max`" only wins for the *full* sweep run in
+one process. When the sweep is run for a single rank (common in practice),
+precomputing `r=25` is pure waste — more expensive than the `r=2` init it
+replaces. Guard it on "sweep length > 1".
+
+---
+
+## 32. The evaluation-honesty line — confounds multiply, and one of them is the headline
+
+§10 lists measurement gaps; §24 adds three more. This section treats honesty as
+its own attack axis, because an unpublishable result is a failed optimisation
+regardless of the speedup.
+
+### (a) What stacks
+
+Evaluation fixes **compose because confounds multiply**: a result with three
+uncontrolled variables is three-ways-unpublishable, and removing one still
+leaves the product of the rest.
+
+- **§10's 2×2 ablation `{exact, randomized} × {k=2000, EarlyStop}` + §24's
+  "noise off, PSNR vs clean" + `DECISIONS.md` §4.4's "matched iteration
+  budget"** run *together* produce one clean table; run separately each leaves
+  the others' confounds standing.
+- **The GPU baseline (§10 row 1 / `DECISIONS.md` §15) is the prerequisite that
+  multiplies through everything.** Every ratio in this document — bf16 1.63x,
+  `h_prod` 9–41x, randomized init 4.3x — is meaningless without a same-hardware
+  "before". It is not one measurement among many; it is the denominator of all
+  of them.
+- **§9.4 (discrepancy stop) + `DECISIONS.md` §16 (noise floor):** naming the
+  noise level `0.01·sqrt(N)` gives *both* a stop rule and the y-axis floor of
+  every error plot. One number, two uses — you cannot beat it, so plotting
+  below it is a tell.
+
+### (b) What contradicts
+
+1. **§10's acceptance criterion vs `DECISIONS.md` §15.** §10 says the `h_prod`
+   change is "bit-identical, error/PSNR/SSIM must not move". §15 *corrected*
+   this: bit-identical is false on GPU (1.4 ulp, cuBLAS reduction order).
+   §10's own bar contradicts the finding; it needs rewording to §15's revised
+   "exact in float64, ≤8 ulp on GPU".
+2. **bf16 (session, "4th-decimal move") sits exactly on that boundary.** §10's
+   old "must not move" would *reject* bf16; §15's revised "movement beyond the
+   3rd decimal means something broke" would *accept* it. Which bar applies is
+   unresolved, and bf16 is the test case that forces the choice.
+3. **§24 ("noise off for codec comparison") vs `DECISIONS.md` §16 ("a hard
+   [0,1] constraint would be actively harmful — the target is itself out of
+   range").** §16's entire conclusion assumes noise *on*. Turn it off for §24
+   and the §16 range-constraint experiments must be re-run; the two sections
+   assume opposite noise settings.
+4. **§26 (does HadDNN earn its cost) vs the paper's "neural architectures"
+   framing.** Reporting HadDNN as a headline method when it is 8x slower, worse
+   (`DECISIONS.md` §12), and ~half inert (session) is itself the honesty
+   problem — but cutting it weakens half the stated contribution. Honesty vs
+   narrative, unresolved.
+
+### (c) Further approaches on this line
+
+- **In the doc:** §10 (gap table), §24 (codec / corrupted reference / ratio
+  accounting), §9.4 (noise floor).
+- **Not yet in the doc:**
+  - **Seed variance / confidence intervals.** Every number in `DECISIONS.md`
+    §3/§12/§15 and this session is `n=1`. Report mean ± std over ≥5 seeds
+    before any of them is load-bearing — especially "0.97x" (§6), which noise
+    could push either side of 1.0.
+  - **Fresh process per sweep point.** The rank sweep runs sequentially in one
+    process (`DECISIONS.md` §3); RNG state, cudnn autotune cache and thermal
+    throttling over a multi-hour run mean late ranks are measured under
+    different conditions. Randomise rank order or isolate processes.
+  - **Split decode cost from fit cost.** §30: decode ~0.8 ms, encode 0.7 s+.
+    `DECISIONS.md` §3's "time" conflates fit + reconstruction + metrics.
+  - **Report wall-clock, FLOPs, and epochs — all three.** `DECISIONS.md` §4.4
+    shows wall-clock alone misleads (numba-CPU vs GPU, 20x iteration mismatch).
+    FLOP counts are hardware-independent.
+  - **Held-out evaluation for the regularisation claim.** `DECISIONS.md` §12's
+    "early stopping improved HadDNN -0.08%" is a generalisation claim; it needs
+    a held-out slice or a held-out noise realisation, not the fit residual.
+  - **Error-at-fixed-time, not time-at-convergence.** Give every baseline the
+    same wall-clock budget (`DECISIONS.md` §4.4: AGD/IGD get 40000 iters vs
+    HadNet's 2000) and compare error at that budget.
+
+### (d) Gap + mitigation
+
+**Gap.** No section addresses statistical significance. Every measured claim —
+`DECISIONS.md` §3, §12, §15; session bf16 / compile / DNN — is `n=1`. Point
+estimates with unknown variance, and "torch.compile 0.97x" is close enough to
+1.0 that noise could flip its sign.
+
+**Mitigation.** `bench/variance.py`: run the core fit ≥10x per config
+(fp32 / bf16 / +compile / +early-stop) across seeds, report mean ± std and a
+paired test between configs. Each fit is ~0.7–1 s, so the whole thing is
+minutes. Run it *before* any session number enters a paper or reorders the
+priority list.
+
+**Open question to argue about.** How much of the headline "21x faster than
+TAGD" (`DECISIONS.md` §3: 57 s vs 1193 s) survives an honest re-run? §4.4
+already notes it is "close to the iteration-count ratio alone" (40000/2000 =
+20). Matched iteration budget and hardware — does HadNet keep *any* speed
+advantage, or is the entire headline an artefact of unequal setup? Highest-
+stakes question in the document; nothing currently commits to answering it.
+
+**Failure mode.** A fully honest re-evaluation (matched budgets, matched
+hardware, error bars, codec baselines, FLOP counts) may show HadNet leads on
+neither speed nor ratio — reducing the contribution to "a parameterisation
+with `r²` expressiveness", a weaker but still real paper. The risk of doing
+the honest evaluation is having to change the framing; the risk of not doing
+it is a reviewer changing it for you.
+
+---
+
+# Second pass — deeper on the highest-value axis
+
+All six axes covered once (§27–§32). The session measurements point hardest at
+**per-epoch cost**: backward is 75% of an epoch, bf16 buys 1.63x, and §27's
+open question — is `k` even the dominant lever after early stopping — makes the
+*content* of one epoch, not their count, the live target. §33+ drill into that.
+
+## 33. Per-epoch cost, and specifically the backward pass (the measured 75%)
+
+`k` (§27) attacks epoch *count*. This attacks epoch *content*. At ~300
+early-stopped epochs × ~2.3 ms (bf16) the per-epoch anatomy is: forward 763 µs,
+**backward 2860 µs**, Adam 173 µs (session, Carphone shape).
+
+### (a) What stacks
+
+- **bf16 (1.63x) is arithmetic width; lower `r` (§11 ladder) is arithmetic
+  volume (`O(k·r·mnp)`, linear in `r`); block solves (§25 ADMM / §15 Schur /
+  §1 Riemannian) replace the joint 4-factor backward with per-block work.**
+  These three multiply: a low-`r` rung, in bf16, with the backward replaced by
+  a block solve, cuts all three of width, volume, and structure.
+- **§5 (factor sharing) does NOT join this stack** — §28 established it shrinks
+  the *parameter* gradient, not the residual computation, and the residual is
+  what backward is dominated by. §5 is a compression lever with ~zero per-epoch
+  speed effect; do not count it here.
+- **A hand-written `autograd.Function` backward for `forward()` composes with
+  bf16** — it reuses `M1, M2` from the forward for the product rule instead of
+  letting autograd hold/rebuild the graph, and the reused GEMMs are themselves
+  bf16.
+
+### (b) What contradicts
+
+1. **bf16 vs the tail.** bf16 accumulates gradients and Adam moments at reduced
+   precision; late in training the gradient is ~1e-3 (the §11 plateau), where
+   bf16's ~1e-2 relative error corrupts the moment estimates. bf16 could
+   *lengthen* the tail even while speeding each epoch — net below 1.63x. (This
+   session it did not: ~300 epochs both, Carphone. At tighter tolerances or
+   other shapes it might.)
+2. **Custom fused backward (§6 Triton) vs the bit-identical bar.** A
+   hand-written backward will not match autograd's reduction order — it lands
+   under `DECISIONS.md` §15's "≤8 ulp on GPU", not §10's "bit-identical". Same
+   boundary §32(b) flags for bf16.
+3. **Lower `r` vs §3's whole premise.** Hadamard's selling point is rank `r²`
+   at `2r(m+n)` params (§3). Cutting `r` to cheapen backward discards the
+   expressiveness that motivates the method. §11's ladder is safe only if it
+   *ends* at the target `r`; sustained per-epoch pressure toward a permanently
+   lower `r` undercuts §3.
+4. **"Replace backward" (§15/§25/§1) is not "remove backward".** A Schur
+   block-solve sweep is itself `O(mnr²)` per block plus a batched
+   Cholesky/lstsq over 180 slices, with its own kernel-launch profile. §15's
+   own open question (the 1440×1440 solve) already doubts it beats the autograd
+   backward it replaces — measure before committing.
+
+### (c) Further approaches on this line
+
+- **Touches the doc:** bf16, low-`r` §11, block solves §15/§25/§1, Triton §6
+  (but `torch.compile` max-autotune measured **0.97x** — SM-starved laptop
+  4050).
+- **Not yet in the doc:**
+  - **Explicit `autograd.Function` for `forward()`.** ~40 lines: cache
+    `M1, M2`; `dW1 = (dX∘M2) batched-@ H1ᵀ`, `dH1 = W1ᵀ batched-@ (dX∘M2)`,
+    symmetric with `M1`. Four batched GEMMs + two elementwise, no graph
+    bookkeeping. Directly targets the 2860 µs.
+  - **Fuse residual + loss into one kernel.** `norm(D − M1∘M2)` currently
+    materialises the full `144·144·180` (15 MB) `(D − X_hat)` temp, then reads
+    it back for the norm. A single pass computing residual and its
+    sum-of-squares saves that write+reread — a bandwidth win (`DECISIONS.md`
+    §5 notes the small-matmul regime is launch/bandwidth-bound, not FLOP-bound).
+  - **`torch.compile(mode="reduce-overhead")` = CUDA graphs.** A *different*
+    mechanism from the max-autotune path that scored 0.97x — it captures the
+    step as a replayable graph and cuts Python/launch overhead specifically.
+    Untested this session; the natural next probe after max-autotune failed.
+  - **Freeze converged blocks.** If `‖grad(W2,H2)‖` collapses while `(W1,H1)`
+    is still moving, stop backpropagating into `(W2,H2)` — up to ~2x off
+    backward in the tail, where `DECISIONS.md` §11 says most epochs live.
+  - **Squared loss.** `2(X_hat − D)` skips the `/‖R‖` divide and the norm's own
+    backward node. `squared_loss` already exists (`DECISIONS.md` §11/§14);
+    marginal, but it is inside the 75%.
+
+### (d) Gap + mitigation
+
+**Gap.** "Backward = 75%" is measured but **not decomposed**. Of the 2860 µs,
+how much is the 4 batched GEMMs vs autograd graph overhead vs the norm's
+backward vs memory traffic from the `(D − X_hat)` temp? bf16 helping 1.63x
+hints arithmetic-bound; the ratio falling short of 2x hints overhead too.
+Nobody has looked.
+
+**Mitigation.** `torch.profiler` on one training step, kernel-level: GEMM vs
+elementwise vs memcpy vs CPU-side gaps. If backward is ~all GEMM, only
+bf16 / lower-`r` / block-solves help and a custom kernel is wasted effort. If
+≥20% is overhead or memory, the fused backward and fused loss are worth
+writing. One profile decides.
+
+**Open question to argue about.** Is a custom `autograd.Function` worth the
+maintenance cost? It is fragile — it must track `h_prod`'s `permute` layout and
+the `*p` slice dims, and any later edit to `forward()` breaks it *silently*
+(wrong gradients, not a crash). The repo's ethos is "the fix lands once"
+(`hadamard_ops.py`); a hand-written backward is the opposite. Probably only
+justified if the profiler shows >30% of backward is non-GEMM.
+
+**Failure mode.** Kernel-level work on the laptop 4050 may be futile: the same
+SM starvation that made `torch.compile` 0.97x ("Not enough SMs", session)
+caps any hand-fused kernel. "Backward is 75%" might be **un-actionable on this
+hardware** and only bite at the `n⁴`-tensor / workstation-GPU scale §6 and
+`GPU.md` target — in which case the honest move is to measure it there before
+optimising for it here.
+
+---
+
+## 34. The HadamardDNN finding as a cross-cutting constraint (second pass on `p`-scaling)
+
+Session measurement: `HadamardDNN` is **134.8M params vs HadNet's 1.04M**, and
+freezing every `FactorNet`'s first `Linear(259200→64)` plus its learned input
+vector — **~half the parameters** — leaves training and final error unchanged
+(rel err 0.367). This is not a bug to file; it re-reads several lines above.
+
+### (a) What it reveals — a hidden composition
+
+`FactorNet(learned_constant_vector)` with a 64-wide first layer *is* an
+**accidental rank-64 factorisation** of the flattened `(m,r,p)` factor. So
+HadDNN already implements §5's "shared basis + per-slice coefficients" — at
+~130x the parameter cost, with the basis learned by an inert MLP instead of set.
+Consequences:
+
+- **§5 + §26 compose exactly here.** "Replace `FactorNet` with
+  `Basis[mr, s] · Coeff[s, p]`, initialise `Basis` from HadNet's converged
+  factor by SVD" delivers HadDNN's *intended* low-rank-along-`p` structure at
+  `s(mr + p)` params, warm-started, no MLP.
+- **§8.4 is the correct `FactorNet`.** With a real coordinate input (the slice
+  index `p`) instead of a learned constant, `MLP(p)` genuinely varies and the
+  130x bloat becomes a compact continuous representation. §27(b)7 flagged the
+  trap; this is the resolution — `FactorNet` ∘ fix-the-input = §8.4.
+- **It is already a compression lever (§30), unclaimed.** A rank-64 factor of
+  `(m,r,p)` stored explicitly is `64(mr+p) ≈ 104k` numbers vs HadNet's
+  `mrp = 259200` — ~2.5x on top of HadNet, buried inside 33M-param nets.
+
+### (b) What contradicts
+
+1. **§26 (distil HadNet → HadDNN) vs the bottleneck.** HadNet's converged
+   factor can be full-rank; a 64-wide bottleneck cannot receive its rank->64
+   content. §26's distillation is **lossy by construction** unless the
+   bottleneck is widened or removed — §26 did not know this.
+2. **The "neural architectures" contribution vs the measurement.** If
+   `FactorNet` is provably ≈ an explicit low-rank map with half its params
+   inert (session), "neural architecture" names "a low-rank reparameterisation
+   with extra steps". §32(b)4's honesty tension, now concrete.
+3. **§8.4-fix vs §26-fix don't compose.** Coordinate-net says "make the input a
+   coordinate"; distillation says "warm-start the weights". Do the former and
+   the thing being distilled *into* is a different architecture onto which
+   HadNet's factors do not map cleanly.
+4. **The bloat and the regularisation are the same mechanism.** `DECISIONS.md`
+   §12: HadDNN *improved* with early stopping — "regularisation on the
+   over-parameterised factor nets". The 64-dim bottleneck is a strong implicit
+   regulariser. Remove it (the §5/§26 fix) and that regularisation goes with
+   it — may need re-adding explicitly (§29's L2).
+
+### (c) Further approaches (this is `p`-scaling revisited)
+
+- **Sweep the bottleneck width `s`.** It is hard-coded 64 (session). Sweep
+  `s ∈ {8,16,32,64,128}`, read error — this *measures the effective `p`-rank*,
+  which §28(d) named as the unmeasured gap, as a free side effect.
+- **One shared net + a factor-id embedding** instead of four structurally
+  identical `FactorNet`s — 4x off the net params.
+- **Drop the learned input, feed a fixed Fourier/coordinate basis of `p`** —
+  `FactorNet` becomes an honest `p → factor-slice` map (§8.4); 33M → ~`64·mr`.
+- **Just don't allocate the inert half.** Session showed freezing it costs
+  nothing; not allocating it is an immediate 2x cut to HadDNN params, memory,
+  and Adam state, measured, zero accuracy cost.
+
+### (d) Gap + mitigation
+
+**Gap.** `DECISIONS.md` §12 reports HadNet-vs-HadDNN error without either
+model's parameter count. A reader sees "architecture vs architecture"; it is
+actually **1.04M params vs 135M (67M inert)**. The comparison's headline
+("8x slower, no better") is missing the term that explains it.
+
+**Mitigation.** Add a parameter-count column to every HadNet/HadDNN table.
+One column reframes the result as "**135x bigger**, 8x slower, no better" —
+which is the finding, and changes the conclusion a reader draws.
+
+**Open question to argue about.** If the §5/§26 fix works, is there any reason
+for HadamardDNN to remain a *separate method*, or does it collapse into "HadNet
+with an optional low-rank-along-`p` knob" — one method, not two? The paper's
+two-named-contributions structure may not survive the fix.
+
+**Failure mode.** The bottleneck's *nonlinearity* (LayerNorm + ReLU), not its
+low rank, might be what regularises (`DECISIONS.md` §12's −0.08%). An explicit
+rank-`s` *linear* replacement would then underperform, and you would be back to
+tuning an explicit regulariser (§29) to match. Test the linear replacement
+against the nonlinear `FactorNet` at matched width before calling the MLP pure
+waste.
+
+---
+
+## 35. The composed-stack claim — Amdahl, ordering, and whether it has ever been run (second pass on evaluation-honesty)
+
+§27(a) asserts "~5x over baseline before any research-grade change". No run
+has ever applied all applied levers together and timed it. This section audits
+that claim.
+
+### (a) What the applied levers actually contribute at loop level
+
+| Lever | Headline number | Level it was measured at | Loop-level effect (Amdahl) |
+|---|---|---|---|
+| `h_prod` batch (§4/L1) | 9x CPU / **41x GPU** (`DECISIONS.md` §15) | the *kernel* | `h_prod` ≈ 14% of the epoch (session: 526 µs of 3795) → epoch ceiling **~1.15x** |
+| early stopping (§12/L3) | **3–3.3x** (`DECISIONS.md` §12) | the *loop* | ~3x, genuine |
+| randomized init (§4/L2) | 2x CPU / **4.3x GPU** (`DECISIONS.md` §15) | *init* | init ≈ few % (§31 gap) → epoch-run ceiling **~1.03x** |
+| bf16 (session) | **1.63x** | the *loop* | ~1.63x, genuine |
+
+Composed loop-level: `3 × 1.63 × 1.15 × 1.03 ≈ 5.6x`, and it is **dominated by
+early stopping and bf16**. The two biggest-*looking* levers — `h_prod` 41x,
+init 4.3x — are the two *smallest* at the level that matters, because Amdahl
+caps a component speedup by that component's runtime share. The doc never
+states this; `DECISIONS.md` §15 measured the kernels, not the loop.
+
+### (b) What contradicts inside the applied stack
+
+1. **Early stopping cannibalises the `h_prod` win.** Cutting epochs 3x cuts
+   the total time spent in `h_prod` 3x, shrinking its already-tiny absolute
+   contribution further. They compose, but §12 eats §4.
+2. **Randomized init + early stopping — the §10 confound, still unrun.** Both
+   shift error ~1% and are always on together (`DECISIONS.md` §10). A rougher
+   init *and* a shorter descent could compound to worse final error than
+   either alone; the 2×2 grid §10 asks for has not been run.
+3. **Stacked perturbations vs the "3rd decimal = broken" bar.** bf16 rounding
+   (~1e-2 relative) + randomized-init delta (1.7e-3, `DECISIONS.md` §13),
+   together, may push final error past `DECISIONS.md` §15's acceptance
+   threshold. Unchecked.
+4. **bf16 vs `EarlyStop`'s trigger.** `EarlyStop` fires on relative
+   improvement `< 1e-3`; bf16's loss-noise floor is ~1e-2 relative, so bf16
+   can make `EarlyStop` quit *before* real convergence — fewer epochs, higher
+   error. An **ordering interaction** between two applied levers: measuring bf16
+   speedup without re-checking the stop point overstates it.
+
+### (c) Further approaches on this line
+
+- **In the doc:** §10 (gap table), §24, §32, §9.4.
+- **Not yet:**
+  - **One frozen canonical config.** Folders disagree on `max_epochs`
+    (2000 vs 10000, `DECISIONS.md` §14), loss (squared vs unsquared, §14),
+    `niter` (4 vs 24, §13). No two folders measure the same thing — define one
+    config, port all four, re-run.
+  - **Amdahl column on every speedup.** Report component-level *and*
+    loop-level (component × runtime fraction) side by side.
+  - **Ablation by removal.** Start from the full stack, drop one lever at a
+    time, measure the delta — the reverse of `DECISIONS.md`'s add-one-at-a-time
+    story, and the only way to see which levers are load-bearing once stacked.
+  - **`bench/regression.py`.** Re-runs the headline configs, asserts the
+    `DECISIONS.md` numbers still hold within seed variance — catches silent
+    drift as code changes.
+  - **Provenance tag on every number.** `DECISIONS.md` §5's bench is
+    CPU/numpy; §15 is GPU; §3 is from the paper. Tag each figure with how it
+    was obtained; the doc currently reads them as interchangeable.
+
+### (d) Gap + mitigation
+
+**Gap.** The composed end-to-end speedup **has never been measured**. `h_prod`
+(§15, kernel), early stop (§12, loop), randomized init (§13/§15, init), bf16
+(session, loop) were each measured alone, on different setups and shapes. No
+run applies all four and times it against the unmodified `main` HadNet path on
+one GPU. §10 row 1 is still open — and now it must be baseline vs
+*fully-optimised*, not vs any single lever.
+
+**Mitigation.** One script, one GPU, one shape: `git stash` → time the `main`
+HadNet path → restore → time with everything on → repeat ≥5 seeds. Report *that*
+number with variance. It, not the component figures, is the paper's claim.
+
+**Open question to argue about.** If the composed win is ~5–6x and it is
+~all early stopping (3x) + bf16 (1.63x) — two changes that are (a) not novel
+and (b) apply equally to the *baselines* (AGD/IGD/BCD could also early-stop and
+run bf16) — does HadNet's *relative* advantage move at all? These levers may
+lift all boats. Note `DECISIONS.md` §7's remark that `h_prod` batching *widens*
+HadNet's lead specifically — early stopping and bf16 have no such property, so
+they may leave the comparative claim exactly where it was, or erode it.
+
+**Failure mode.** Freezing a canonical config and re-running all four folders
+is a multi-hour job (`COMMANDS.md` §3: full video sweep is hours) on a 4050
+that thermally throttles over long runs (§32(c)). The honest re-run may itself
+be unreliable on this hardware; done properly it needs the workstation
+(`GPU.md` §4). Half-doing it on the 4050 yields numbers no more trustworthy
+than the ones it replaces.
+
+---
+
+## 36. Gauge-fixing as connective tissue, and when to do it (second pass on conditioning)
+
+§29 audited the conditioning layer internally. The cross-cutting point: a
+consistent gauge is a **precondition for four other lines**, so §18/§8.2 may
+earn their place even if `DECISIONS.md` §11's plateau turns out not to be
+conditioning at all.
+
+### (a) What a fixed gauge unlocks
+
+The scaling/`GL(r)` symmetry (§1) means "the factors" are only defined up to a
+transform. Every approach that *reuses factors across something* needs them in
+a consistent gauge or the reuse is noise:
+
+- **§19 (delta-code along `p`)** — `W1[:,:,t] − W1[:,:,t−1]` is only small if
+  consecutive slices share a gauge (already flagged in §19, §27).
+- **§13 (streaming warm-start)** — slice `t` inheriting slice `t−1`'s factors
+  assumes the same gauge.
+- **§11 (rank ladder)** — embedding the `r=5` solution into `r=10` needs the
+  `r=5` factors canonical, or the appended columns land arbitrarily.
+- **§26 (distillation)** — distilling into a canonical-gauge student (§34).
+
+So **one post-fit canonicalisation** — a single QR/SVD of the converged
+factors, or Sinkhorn to convergence, *outside* the epoch loop — composes with
+all four at near-zero cost. This is a different use of §18/§8.2 than "fix the
+conditioning every step".
+
+### (b) What contradicts
+
+1. **Every-step gauge-fix (§18 QR, §8.2 Sinkhorn) vs the §33 per-epoch
+   budget.** Both add forward+backward ops over `p`-carrying factors — the
+   §4.1 loop hazard, on top of a backward that is already 75% of the epoch
+   (session). The conditioning benefit and the connective benefit want
+   *different schedules*: every-step for the former, once-at-end for the latter.
+2. **§1 (Riemannian quotient) is architecturally incompatible with §19/§13.**
+   A quotient-manifold optimiser never materialises explicit factors in a
+   fixed gauge — it works with equivalence classes. The compression and
+   streaming lines need explicit, gauge-consistent factor *tensors* to consume.
+   §1's output cannot feed them without a projection step that undoes part of
+   what §1 bought.
+3. **Canonicalise-at-end vs quantise (§14).** Post-fit QR changes the factor
+   magnitudes (pushes scale into `R`); the §14 per-column quantisation scales
+   must be recomputed *after* canonicalisation, not before — order matters.
+
+### (c) Further approaches on this line
+
+- **In the doc:** §1, §8.2, §8.3, §9.1, §9.3, §18, plus §29's spectral-norm /
+  `S^{-1/2}` preconditioner / L2 / named-scale-coordinate.
+- **Not yet:**
+  - **Canonicalise at checkpoints, not every step.** Every `N` epochs, one
+    batched QR of the factors — amortises the §33 cost while stopping the gauge
+    drifting far. Tunable `N` trades cost against drift.
+  - **Procrustes-align each epoch's factors to the (canonical) SVD init.**
+    Cheaper than full balancing; keeps the gauge stable enough for §19/§13
+    without solving the conditioning.
+  - **Measure the drift first.** Log the balancedness residual
+    `‖W1ᵀW1 − H1H1ᵀ‖_F / ‖W1ᵀW1‖_F` per epoch. Deep-linear-net theory (§8.2,
+    Arora et al.) says gradient *flow* preserves it — but Adam is not gradient
+    flow. If it stays ~0 under Adam, the whole symmetry layer is unmotivated
+    for HadNet-as-run.
+  - **Projected Adam vs plain Adam ablation.** If Adam is what breaks the
+    gauge, projecting to Stiefel each step (§18) vs not isolates the effect in
+    one run.
+
+### (d) Gap + mitigation
+
+**Gap.** No section measures whether the gauge actually drifts under Adam.
+§1/§8.2/§8.3/§18 all *assume* it does; the only cited theory (Arora et al.,
+via §8.2) is for gradient flow, which the repo does not run — it runs Adam
+(`lr=0.1`, `DECISIONS.md` §9).
+
+**Mitigation.** Log `‖W1ᵀW1 − H1H1ᵀ‖_F / ‖W1ᵀW1‖_F` every epoch for one
+Carphone fit and one `random-tensor` fit. `< 1e-3` throughout → the symmetry
+layer (§1/§8.2/§8.3/§18) is solving a non-problem for HadNet as configured, and
+only the *connective* use (36(a)) justifies §18. Growing to `O(1)` → the layer
+is real and §18 (cheapest, §29) leads it.
+
+**Open question to argue about.** If the gauge does *not* drift under Adam, why
+does the `DECISIONS.md` §11 plateau happen? That single measurement would
+eliminate the symmetry explanation and hand the plateau to §12 (low-frequency
+mode), §17 (non-convex basin), or simply too-small `lr` — redirecting the
+entire "attack the plateau" effort away from §1/§8.2/§18.
+
+**Failure mode.** Balancedness drift may differ between `random-tensor` (no
+structure) and Carphone (structured) — the §12/§13/§21 image-vs-random split
+recurs. One dataset's measurement could send the priority order the wrong way;
+run both before concluding.
+
+---
+
+## 37. Rate–distortion as the objective that reorders the document (second pass on compression-ratio)
+
+§30 built the ratio pipeline. This asks: if the paper commits to **(bits,
+PSNR)** as the headline instead of **(time, Frobenius)**, which sections become
+primary, which become irrelevant, and what breaks.
+
+### (a) What composes under an RD objective
+
+- **Core:** §14 (quantise) → §19 (entropy-code) → §5 (share) → §11 (prune) →
+  §24 (codec baseline). These are the RD story and they multiply (§30(a)).
+- **Demoted to "rank per encode-second":** §1 / §8.2 / §18 (conditioning),
+  §8.1 / §22 / §33 (encode speed) matter *only* insofar as they let you fit at
+  higher rank in a fixed encode budget → lower distortion. They stop being
+  ends and become a single knob: distortion-at-fixed-encode-time.
+- **RD-curve-shape tools:** §3 (`k`-factor), §20 (boosting) — they trade
+  parameters for rank, i.e. they *move you along* the RD curve rather than
+  push it down.
+- **A fixed gauge (§36) is still needed** — §19 delta-coding is in the core
+  path.
+
+### (b) What contradicts under this framing
+
+1. **Frobenius loss vs perceptual metric.** The code minimises Frobenius;
+   `DECISIONS.md` §10 *reports* PSNR and SSIM. A §24 codec comparison on SSIM
+   is unfair to HadNet, which never optimised it. Committing to RD forces
+   either an SSIM/MS-SSIM loss or an honest "PSNR-only, and here is why".
+2. **Differentiable rate penalty (§30(c)) vs the stopping rules.** Adding
+   `λ·H(factors)` changes the loss scale, so `EarlyStop`'s `min_rel=1e-3`
+   (claimed scale-free in §12) no longer transfers, and §9.4's discrepancy
+   threshold — defined on the *Frobenius* residual — is undefined for the
+   rate-augmented objective.
+3. **VQ/PQ (§30(c)) vs the SVD init (§4).** Vector quantisation wants
+   *redundant*, clusterable column vectors; a fresh SVD init has near-
+   orthogonal, maximally-spread columns — the worst case for clustering. VQ
+   only pays late in training once columns have collapsed toward shared
+   structure, which contradicts "quantise the init".
+4. **RD framing vs `DECISIONS.md` §7's "widens the lead" note.** `h_prod`
+   batching widened HadNet's *speed* lead; under an RD headline, speed is not
+   the axis, so that argument stops supporting the paper's contribution.
+
+### (c) Further approaches on this line
+
+- **In the doc:** §14, §19, §5, §11, §24, §30(c)'s RD-rank / hyperprior /
+  `r²`-prune / rate-penalty / VQ.
+- **Not yet:**
+  - **Report a 4-tuple, not a ratio:** `(bpp, PSNR, encode-s, decode-ms)`.
+    Makes HadNet's ~0.8 ms decode (session) a visible axis where it can beat
+    learned codecs (which also decode slowly).
+  - **Progressive / embedded bitstream.** Order factor columns by singular
+    value (already so, from the SVD init) and `r²`-term energy; any bitstream
+    prefix is a valid lower-rank reconstruction. One stored file yields every
+    rank in the `[2,5,10,20,25]` sweep — JPEG2000's progressive-by-quality,
+    free from the existing structure.
+  - **Right baseline class: per-image-overfit neural representations**
+    (COIN, COIN++), not only JPEG/x265 (§24). Same "fit a model per signal,
+    slow encode, fast-ish decode" profile — the fair peer.
+  - **Scheduled QAT.** fp32 for the first ~200 epochs, straight-through
+    quantise for the last ~100 — spend `DECISIONS.md` §12's <1%-value tail on
+    quantisation robustness.
+  - **Entropy-code the sign map separately** (§23). If low-TV for images it
+    codes to near-zero bits; the current model carries sign in fp32 mantissas
+    implicitly.
+
+### (d) Gap + mitigation
+
+**Gap.** The paper reports a *ratio* (`entries / params`) — a unit no
+compression audience uses — and never a *bitrate* (bits per entry). Ratio
+silently assumes fp32; bpp forces the assumption into the open. And every
+result is a single point, not an RD curve (sharpening §24/§30: the missing
+thing is the *axis*, not just a baseline on it).
+
+**Mitigation.** Recompute every `DECISIONS.md` §3 / Table-9 entry as
+`(bpp, PSNR-vs-clean)` from actual serialised byte counts — `int8 + gzip` as a
+floor, arithmetic coding for the real figure — and plot. Reveals as a side
+effect whether the `[2,5,10,20,25]` sweep even spans a useful bitrate range or
+bunches in one corner of the RD plane.
+
+**Open question to argue about.** Is HadNet's defensible niche "compression" at
+all, or "a fast-decoding learned representation for data decoded many times"
+(streaming origin, renderer texture, a scientific field queried repeatedly)?
+Decode ~0.8 ms (session) is genuinely good; encode 0.7 s+ is genuinely bad.
+Every framing choice follows from which number is the pitch.
+
+**Failure mode.** An RD headline puts HadNet on a plot against 30 years of
+codec engineering and a steep bpp–PSNR frontier that took learned codecs years
+to reach. A low-rank-tensor method will likely sit well below it, and "worse
+than x265 but decodes fast" is a niche claim that needs the decode advantage
+measured against a real-time decoder, not asserted.
+
+---
+
+## 38. What the init *is*, not just what it costs (second pass on init cost)
+
+§31 treated the init as a cost to cut. This asks what `svd_initialize` actually
+encodes and whether it is the right prior — which changes whether the whole
+`O(n^5)` story (`DECISIONS.md` §6) is even worth defending.
+
+### (a) The init is a prior four other lines depend on
+
+`svd_initialize` = SVD of `sqrt(|X|)` and `sqrt(|X|)·sign(X)`, scale split
+50/50 into `W` and `H`. It hard-codes the assumption `M1 ≈ M2 ≈ sqrt(X)`.
+Every line that *reuses or warm-starts* factors is consuming that prior:
+
+- **§17 (homotopy)** — the `γ=0` additive fit is a *better* init (bi-convex, no
+  symmetry). §17 and this line converge: "best init" = "solve the easy problem
+  first".
+- **§11 (rank ladder)** — rung `r+1`'s init is rung `r`'s solution +
+  SVD-of-residual, so the init becomes *incremental* and cheap per rung.
+- **§26 (distillation)** — HadNet's converged factors are HadDNN's init; "init"
+  spans models.
+- **§21 (AMP)** — carries its own analytically-prescribed spectral init, which
+  the `sqrt`-split heuristic may be far from.
+
+Composed: additive fit (§17) → SVD of it → ladder increment (§11) → seed HadDNN
+(§26). One init pipeline across four sections.
+
+### (b) What contradicts
+
+1. **The `sqrt` split vs §3's `r²` expressiveness.** The model reaches rank
+   `r²` *because* `M1 ≠ M2` — if `M1 = M2` the product is `M1²`, rank ≤ `r`.
+   The init starts at `M1 ≈ M2`, i.e. the **least expressive point of the model
+   class**. §4's init and §3's headline argument pull opposite ways.
+2. **§16 (faster init) vs §31's open question, sharpened.** If init quality
+   does *not* matter at ~300 early-stopped epochs, only speed matters and §16 /
+   ACA win. If it *does* matter, a faster-but-rougher init is exactly wrong and
+   you want a *better* one (§17's additive fit, AMP's spectral init) even if
+   slower. §16 and "better init" are opposite bets on one unanswered question.
+3. **§9.1 (log-domain) shares no init with the multiplicative model.** SVD of
+   `log|X|` gives an additive low-rank init; `exp` of a low-rank matrix is not
+   low-rank, so it cannot seed the multiplicative factors directly. The two
+   fitting regimes need separate inits.
+4. **Randomized init (§4/L2) noise vs the degenerate start.** The randomised
+   SVD's perturbation might *help* by breaking `M1 = M2` — an accidental
+   benefit — or be too small to matter. Unmeasured, and it interacts with (1).
+
+### (c) Further approaches on this line
+
+- **In the doc:** randomized §4, block-Krylov §16, ACA §8.5, one-SVD-at-`r_max`
+  §31, skip-for-warm-slices §31, learned init §31.
+- **Not yet:**
+  - **Asymmetric init.** Seed `M1` from the positive part of `X`, `M2` from the
+    negative part (or two different transforms) so the model starts with real
+    `r²` expressiveness. No extra cost.
+  - **Reuse the baseline SVD.** `main_video.py:291` already computes a full
+    per-slice SVD for the `X_svd` baseline *before* HadNet runs, then discards
+    it (`DECISIONS.md` §3: baselines run first in the sweep). HadNet's init
+    could consume it — a genuinely free init.
+  - **A few iterations of BCD/AGD as the init.** The baseline solvers are in
+    the codebase; 5 iterations land in the right model class cheaply.
+  - **Line-search the scale split.** `W ← U·S^α`, `H ← S^{1-α}·V`; a quick
+    sweep over `α` at init pre-balances (§8.2) for free instead of assuming
+    `α = 0.5`.
+  - **No init.** Test the null directly (§31's open question): random
+    orthonormal + power-scaled `W, H`. If it ties SVD init at 300 epochs,
+    delete `svd_initialize` and the `O(n^5)` term with it.
+
+### (d) Gap + mitigation
+
+**Gap.** An init supplies three things — right subspace, right scale,
+symmetry-breaking — and no experiment separates them. "SVD init beats random"
+(implicit in the code) conflates all three.
+
+**Mitigation.** Four-way ablation at a fixed epoch budget: (i) full
+SVD-of-`sqrt` (current); (ii) same subspace, random scale split; (iii) random
+subspace, matched scale; (iv) asymmetric `M1 ≠ M2`. Measure epochs-to-tolerance
+and final error. If only "rank + scale" is load-bearing, the SVD is overkill
+and a random-orthonormal + power-scaled init suffices — which removes the
+init-cost line entirely.
+
+**Open question to argue about.** Is the `O(n^5) → O(n^4)` result
+(`DECISIONS.md` §6, the paper's stated complexity target) attacking a term a
+proper init-necessity study would *delete*? If HadNet fits from a rank-`r`
+random init, there is no SVD, no `n^5` term, and the complexity contribution
+becomes "you don't even need the SVD" — a stronger result that nonetheless
+reframes the paper.
+
+**Failure mode.** The degenerate-start concern is theoretical; the randomised
+init's noise or the first few Adam steps may break `M1 = M2` immediately. Log
+`‖M1 − M2‖ / ‖M1‖` over the first 20 epochs first — if it is already `O(1)` by
+epoch 5, the start self-corrects and the asymmetric-init idea is moot.
+
+---
+
+## 39. The measurement-first decision tree (synthesis of every §(d))
+
+Every second-pass section ended with a cheap experiment that would *kill or
+promote a whole layer*. §39 collects them, notes which share infrastructure,
+and which outcomes contradict — because running these six is worth more than a
+seventh synthesis section.
+
+### (a) The diagnostics compose into ~one instrumented run
+
+| # | From | Measures | One outcome that kills a layer |
+|---|---|---|---|
+| M1 | §27(d) | re-run the §11 curve with `EarlyStop` on | "~300 epochs is the knee" → §8.1/§11/§12/§13/§17/§22 have little left |
+| M2 | §29(d) | Lanczos HVP `κ` + consecutive-grad angle at the plateau | "tiny gradient" → not conditioning; §1/§8.2/§8.3/§18 misdirected |
+| M3 | §36(d) | log `‖WᵀW−HHᵀ‖/‖WᵀW‖` per epoch | "stays <1e-3 under Adam" → symmetry layer solves a non-problem |
+| M4 | §28(d) | SVD the `p`-mode unfolding (`144·144 × 180`) | "effective rank ~120" → §5/§28/§34 sharing mostly dead |
+| M5 | §35(d) | `git stash` composed-stack run, ≥5 seeds | the real end-to-end speedup + variance; prerequisite for every ratio |
+| M6 | §38(d) | 4-way init ablation (subspace / scale / symmetry) | "only rank+scale matter" → delete `svd_initialize`, `n^5` term goes |
+
+**M1, M2, M3, M6 fall out of one instrumented fit** (log the loss curve, grad
+norms, balancedness, run with four init variants). M4 and M5 are small
+standalone scripts. Add M7 = one `torch.profiler` step (§33(d), backward
+GEMM-vs-overhead). Total: an afternoon on the 4050, and it resolves the
+priority of ~20 sections.
+
+### (b) Outcomes that contradict each other's premises
+
+1. **M2 "large oscillating gradient" + M3 "no drift"** is a contradiction: a
+   badly-conditioned landscape whose ill-conditioning is *not* the scaling
+   symmetry. Then §1/§8.2/§18 (which target the symmetry specifically) would
+   not fix it — the conditioning would trace to the `sqrt` transform or the
+   unsquared loss instead. The pair can confirm the *symptom* while
+   invalidating the *mechanism* the whole layer assumes.
+2. **M5 depends on M1.** The composed-stack number is only meaningful if the
+   early-stopping point is right, but M1 needs the composed setup to measure
+   the stop point in context — circular. Resolve by running M5 twice: once at
+   fixed `k`, once with `EarlyStop`, and report both.
+3. **M4 + M6 interaction.** M4 "p-rank ~15" and M6 "subspace doesn't matter"
+   together mean the shared basis can be a *random* rank-15 projection —
+   §5 and §38 collapse into one trivial change, no SVD anywhere. M4 "p-rank
+   ~120" makes §5/§28/§34 mostly dead regardless of M6.
+
+### (c) Further diagnostics not yet proposed anywhere
+
+- **Per-slice error histogram.** Uniform across 180 slices, or spiked at scene
+  changes? One plot settles the relevance of §13, §19, §23 at once.
+- **The `error(r, k)` surface.** Grid `r ∈ {5,10,20} × epochs ∈ {100,300,1000}`
+  — the shape decides ladder (§11) vs boosting (§20) vs "just pick bigger `r`".
+- **Noise-floor probe.** Fit `r=50`, 5000 epochs, no early stop. If error is
+  still ~47 (`DECISIONS.md` §3), it is noise-limited (`DECISIONS.md` §16's
+  `0.01·randn`) and every `k` / conditioning lever is chasing a floor it
+  cannot beat.
+- **Gradient-noise scale.** Full-batch loss today; one number says whether
+  minibatching entries could help at all (§27(c)).
+
+### (d) Gap + mitigation
+
+**Gap.** 38 sections, ~6 applied levers, and the doc never says which *single*
+measurement moves the most priorities. There is no "if you run one experiment"
+answer.
+
+**Mitigation.** Order: **M5 first** — it tells you whether the current state is
+already write-up-ready and it is the §10-row-1 prerequisite everything else is
+stated against. Then M7 and M1 (they fall out of the same runs). M2/M3/M4/M6
+only if M5 shows a real gap worth closing. The noise-floor probe (§39(c))
+before *any* `k` work — it can invalidate the entire convergence layer in one
+run.
+
+**Open question to argue about.** Has "synthesise the approaches" become a
+substitute for running the six experiments that would collapse half of them?
+The session's measured facts (bf16 1.63x, backward 75%, DNN half-inert) each
+cost one script; the dozen synthesis sections cost comparable effort and
+resolved nothing empirically. The next unit of work should be a `.py`, not a
+`##`.
+
+**Failure mode.** Treating this as a sequential plan: the composed re-run, the
+`r×k` grid, and the `r=50 / 5000`-epoch probe are each multi-hour on a
+thermally-throttling 4050 (§32(c)), so "an afternoon" is optimistic and some
+results will need the workstation (`GPU.md` §4) to be trustworthy anyway.
+
+---
+
+## 40. First diagnostic run — M1/M2/M3 measured (RTX 4050, `random-tensor`, r=10)
+
+Acting on §39: an instrumented 2000-epoch fit, `random-tensor` at Carphone
+shape, one seed, fp32. `EarlyStop` fired at **epoch 300**. Logged rel-error,
+`‖grad W1‖`, the balancedness residual `‖WᵀW−HHᵀ‖/‖WᵀW‖` (mean over slices,
+factor pair 1), and `‖M1−M2‖/‖M1‖`:
+
+| epoch | rel err | ‖gradW1‖ | balancedness | ‖M1−M2‖/‖M1‖ |
+|---|---|---|---|---|
+| 1   | 0.4499 | 1.13 | 0.049 | 0.079 |
+| 25  | 0.3946 | 0.42 | 0.218 | 0.402 |
+| 50  | 0.3775 | 0.15 | 0.245 | 0.709 |
+| 100 | 0.3667 | 0.31 | 0.275 | 0.840 |
+| 300 | 0.3627 | 0.46 | 0.170 | 0.888 |
+| 1000| 0.3620 | 0.54 | 0.150 | 0.908 |
+| 2000| 0.3620 | 0.46 | 0.227 | 0.916 |
+
+### What it resolves
+
+- **M1 — ~300 epochs is the knee, decisively.** Epoch 300 → 2000 is **6.7x
+  the compute for 0.2% relative error** (0.3627 → 0.3620). `EarlyStop` already
+  sits at the knee. The `DECISIONS.md` §11 "87% of epochs wasted" figure is
+  real *at fixed k=2000* but early stopping already captures it — the whole
+  convergence layer (§8.1 Anderson, §11 ladder, §17 homotopy, §22 Parareal)
+  is fighting over ~0.2% of error below epoch 300. **§27's open question is
+  answered: `k` is no longer the lever.** Per-epoch cost (§33) and everything
+  else move up.
+- **M2 — plateau gradient is large (~0.5) and oscillating, not vanishing.**
+  Not a stationary point; a geometry the optimiser is fighting. The §29(d)
+  "tiny gradient → not conditioning" branch does **not** fire.
+- **M3 — the gauge drifts under Adam.** Balancedness goes 0.05 → 0.27 by epoch
+  100, settles ~0.15–0.23. Not `<1e-3` (which would have killed the symmetry
+  layer per §36(d)), not blowing up either — **moderate, persistent drift.**
+  §1/§8.2/§18 target a mechanism that is genuinely active.
+- **M2 + M3 are consistent** — oscillating gradient *and* moderate drift is the
+  coherent "scaling symmetry causes ill-conditioning" picture. §36(b)'s
+  contradiction case (large gradient *without* drift) did not occur.
+- **§38's degenerate start self-corrects by ~epoch 25.** `‖M1−M2‖/‖M1‖`:
+  0.08 → 0.40 (ep 25) → 0.89 (ep 300). §38's own failure-mode check confirms:
+  the descent breaks `M1 = M2` within a few epochs, so the **asymmetric-init
+  idea (§38(c)) is moot**.
+
+### (a)/(b)/(c)/(d) in one pass
+
+**Composability of the finding:** M1 + M3 together *reorder the document*. `k`
+is settled, so the axes that still have headroom are per-epoch cost (§33 —
+bf16 confirmed 1.63x, backward 75%), `p`-scaling for the *ratio* (§28/§30, no
+speed claim per §28's open question), and evaluation-honesty (§35 — the
+composed number still unmeasured). **Contradiction surfaced:** M3 says the
+symmetry layer is legitimate, but M1 says its prize (error below epoch 300) is
+~0.2% — so §1's `O((m+n)r^4)` cost (§29(b)) buys almost nothing *for
+convergence*; its only remaining justification is the *connective* role (§36(a)
+— gauge consistency for §11/§13/§19/§26). **Line:** this is a `k`-line result
+that closes the `k` line. **Gap it exposes:** every number here is
+`random-tensor`, one seed. The §12/§13/§21 image-vs-random split means Carphone
+could show a lower knee (video is genuinely low-rank) or worse drift.
+
+**Open question to argue about.** If `k` is settled at ~300 epochs and the
+symmetry prize is ~0.2%, is *any* algorithmic section (§1, §8.1–8.3, §15, §17,
+§21, §22, §25) worth building for HadNet as-configured — or is the entire
+remaining opportunity in per-epoch cost (bf16, lower `r`) and honest
+measurement (§35)? The doc may have been over-indexed on convergence.
+
+**Failure mode.** One seed, one dataset, one shape, fp32. Carphone must be
+re-run before M1's "knee at 300" is trusted for the paper's actual benchmark —
+`random-tensor` has no low-rank structure to converge *to*, so its knee may be
+artificially early.
+
+---
+
+## 41. M5 measured, and a basin probe that overturns §40's reading
+
+Acting on §39's "M5 first". Built a **genuinely Hadamard-structured** signal
+`X = (ab)∘(cd)` (iid Gaussian factors, rank 10) `/max + 0.01·randn`, so a
+rank-10 Hadamard model is *exactly* rank-matched. 5 seeds, RTX 4050.
+
+### M5 — the composed end-to-end speedup
+
+| config | time | epochs | rel err |
+|---|---|---|---|
+| baseline (fp32, k=2000, exact init) | 4.97 ± 0.03 s | 2000 | 0.4859 ± 0.0016 |
+| optimised (bf16 + `EarlyStop` + randomized init) | 0.46 ± 0.03 s | 300 | 0.4870 ± 0.0014 |
+
+**Composed speedup 10.9x**, error cost +0.0011 (inside seed variance). This is
+**2x higher than §35(a)'s Amdahl estimate of ~5.6x** — because early stopping
+here is 6.7x (2000→300), not the 3x `DECISIONS.md` §12 measured under a
+different patience. So: **`EarlyStop` 6.7x × bf16 1.6x ≈ 11x**, and `h_prod`
+batching + randomized init contribute **nothing measurable at loop level** —
+§35(a)'s Amdahl prediction confirmed exactly.
+
+### The basin probe — the real finding
+
+The rel err plateaus at **0.486** for *both* 300 and 2000 epochs. But the
+noise floor for this signal is **0.180** (`0.01·√N / ‖X‖`), and:
+
+| setup | rel err |
+|---|---|
+| **true factors as init** (no training) | **0.180** — model represents the signal exactly |
+| true-factor init + 1000 ep Adam(0.01) | 0.156 |
+| SVD-of-`sqrt` init + 6000 ep Adam(**0.1**) | 0.483 |
+| SVD-of-`sqrt` init + 6000 ep Adam(0.03) | 0.484 |
+| SVD-of-`sqrt` init + 6000 ep Adam(0.01) | 0.484 |
+
+**From the `svd_initialize` basin, Adam cannot reach the solution** — it sits
+at 0.48 while the optimum is 0.18, and 6000 epochs / three learning rates do
+not move it. The plateau is **not a converged tail; it is a trap ~2.7x worse
+than optimal.**
+
+### What this overturns
+
+- **§40's M1 reading was wrong.** "300 epochs ≈ 2000 epochs" is true, but it
+  means *stuck*, not *converged* — `DECISIONS.md` §11's "87% of epochs wasted"
+  is better read as "87% of epochs spent not escaping a bad basin". `k` being
+  "settled" does **not** mean the convergence/basin layer is low-value; it
+  means the opposite.
+- **§38's init line is vindicated hard.** The `sqrt(|X|)` init is the
+  difference between rel 0.18 and rel 0.48 here. §38's "no init / random init"
+  and "additive fit (§17) as init" and "asymmetric `M1≠M2`" tests move to the
+  **top** of the experiment queue.
+- **§17 (homotopy), §11 (ladder), §1/§8.2/§18 (basin geometry), §21 (AMP's
+  spectral init) all regain priority** — they are basin-escape methods, and a
+  basin trap is now measured, not hypothesised.
+
+### (a)/(b)/(c)/(d)
+
+**Composability:** §38 (better init) + §17 (additive-fit init) + §11 (ladder
+init) now compose into "the thing to try", because M5 shows the *applied* stack
+(bf16 + early stop) is done — 11x, no maths risk — and the *next* factor of 2+
+is only reachable by leaving the basin. **Contradiction:** §40 concluded "doc
+over-indexed on convergence"; this section concludes the reverse. The
+resolution: `k`-*count* is settled (§40 M1 stands — more epochs don't help),
+but `k`-*quality* (which basin those epochs run in) is wide open. **Line:**
+init/basin — the highest-value axis after all. **Gap:** every number here is
+one synthetic construction; `sqrt(|X|)` init is *designed* for non-negative
+smooth data (video), and signed Gaussian-factor products are close to its
+worst case.
+
+**Open question to argue about.** Does the basin trap reproduce on **Carphone**
+(non-negative, smooth, what `sqrt(|X|)` init targets), or is it an artefact of
+the signed-Gaussian synthetic signal? If Carphone also plateaus far from its
+achievable optimum, the init/basin line is the whole paper; if Carphone
+converges fine, this section is a synthetic-data curiosity and §40's reading
+stands.
+
+**Failure mode.** The synthetic signal's factors are iid Gaussian — heavy
+Hadamard-product tails, sign-random, `E[X]=0`. `svd_initialize` takes
+`sqrt(|X|)`, which for a zero-mean signed signal discards exactly the structure
+that matters. A fairer probe uses a non-negative low-rank-times-low-rank signal
+plus noise; run that before generalising.
+
+---
+
+## 42. The Carphone-analog run — the trap is synthetic, but `lr=0.1` walks away from a good init
+
+§41's next step, run. Three signals, `svd_initialize` (exact), Adam, RTX 4050:
+
+| signal | init rel | final rel | epochs | note |
+|---|---|---|---|---|
+| [A] non-neg **additive** rank-15, `r=10` model | 0.0417 | **0.0687** | 3000 | training made it **worse** |
+| [B] non-neg **Hadamard** rank-10, `r=10` (matched), lr=0.1 | 0.0824 | **0.1341** | 3000 | training made it **worse** |
+| [B] same, **lr=0.03** | 0.0824 | 0.0818 | 3000 | stable, ~no change |
+| [C] **real video** (`video.mp4`, 144×144×60×3), lr=0.1 | 0.1386 | **0.0645** | 2000 | training **works**, halves the error |
+
+### What it settles
+
+- **§41's basin trap is a synthetic artefact.** On real video, training does its
+  job — init 0.139 → 0.065, consistent with `DECISIONS.md` §3's HadNet regime.
+  §40's "more epochs don't help ≈ converged" reading is closer to right *for
+  the actual application* than §41's "stuck" reading.
+- **But `lr=0.1` is measurably too large.** On both structured synthetics it
+  *degrades* the SVD init (A: 0.042→0.069, B: 0.082→0.134); `lr=0.03` stops
+  the damage. Real video survives `lr=0.1` by luck of being far enough from its
+  optimum that even a too-big step is net-downhill. This is direct evidence for
+  `DECISIONS.md` §9's "`lr=0.1` magic constant" being not just unprincipled but
+  *wrong* in some regimes.
+- **The SVD init already does most of the work when the signal is structured**
+  ([A] init 0.042 is near the 0.022 noise floor before any training).
+
+### (a) What composes
+
+A gentle/adaptive step + a trusted init compose: the init lands close, a small
+step polishes without leaving. **§16 (better init) + §8.1 (Anderson, step-size
+robust) + `squared_loss` (§11/§14, well-behaved curvature) + `lr≈0.03`** is a
+coherent bundle — "trust the init, step carefully". §12 `EarlyStop` composes on
+top and, per [A]/[B], should sometimes fire at **epoch 0**.
+
+### (b) What contradicts
+
+1. **§11 (ladder) / §17 (homotopy) assume the descent is the workhorse and the
+   init is a seed.** [A]/[B] show the reverse for structured data — the init is
+   the workhorse and `lr=0.1` descent is a liability. Building elaborate init
+   *schedules* on top of a descent that walks downhill-then-back-uphill is
+   effort in the wrong place until the step size is fixed.
+2. **§8.1 (Anderson) accelerates the fixed-point iteration — including a
+   divergent one.** If the underlying Adam step moves *away* from the init
+   ([A]/[B]), Anderson makes it move away faster. Anderson needs the base
+   iteration to be descent first; applying it before fixing `lr` is actively
+   harmful.
+3. **§40's M1 vs [C].** M1 (`random-tensor`) said the knee is ~300 epochs; [C]
+   (real video) improves out to 2000. The knee is **data-dependent** — the
+   §12/§13/§21 image-vs-random split, now confirmed on the convergence curve
+   itself.
+
+### (c) Further approaches on this line (step size × init)
+
+- **Backtracking / Armijo line search on `lr`.** One or two extra forward
+  evals per step; removes the magic constant (`DECISIONS.md` §9) with a
+  guarantee the step is downhill — which [A]/[B] show the fixed `0.1` is not.
+- **`lr` warmup then cosine decay** — start at `~0.01`, rise, decay. Standard,
+  and it would have caught [B]'s early divergence.
+- **Per-block `lr`.** After the `sqrt`-split the `W` and `H` blocks have
+  different scales (§38); one global `lr` over-steps one of them.
+- **Init-aware early exit.** If `init_rel < τ`, train for a handful of epochs
+  or not at all. [A] would stop at epoch 0 and beat its own 3000-epoch run.
+- **Plain SGD+Nesterov vs Adam.** `DECISIONS.md` §11 argued Adam's adaptivity
+  competes with geometry methods; [A]/[B] show Adam(0.1) also competes with a
+  good init. A momentum-SGD baseline at matched tuning would isolate it.
+
+### (d) Gap + mitigation
+
+**Gap.** No table in `DECISIONS.md` or this doc reports **init error next to
+final error**. "Training helps" is assumed everywhere and never checked; [A]/[B]
+show it can measurably hurt.
+
+**Mitigation.** Add an `init_rel` column to every result table
+(`DECISIONS.md` §3, Table 9, all folders). Any row with `final ≥ init` is a
+net-negative training run and must be flagged — and re-run at lower `lr`.
+
+**Open question to argue about.** Is a chunk of HadNet's reported advantage
+over TBCD/TAGD (`DECISIONS.md` §3) actually just **a good SVD-of-`sqrt`
+initialisation** rather than the 2000-epoch descent? `DECISIONS.md` §4.4
+already suspects the iteration-count mismatch drives the comparison; reporting
+`init_rel` as its own baseline row would show how much of the gap the init
+alone closes.
+
+**Failure mode.** [C] real video genuinely benefits from training, so
+"trust the init, skip the descent" is wrong for the actual application. The
+synthetic degradation may not generalise — run `init_rel` vs `final_rel` on all
+of MRI / cat / flower / monalisa / video before concluding `lr=0.1` is broadly
+broken.
+
+---
+
+## 43. `init_rel` vs `final_rel` on all four image datasets — the descent is data-dependent
+
+§42's failure-mode check, run: all four `application-images` datasets, `r∈{10,20}`,
+`lr∈{0.1,0.03}`, 1500 epochs, exact init, RTX 4050.
+
+| dataset | init rel (r=10) | final (lr=.1) | final (lr=.03) | training closes |
+|---|---|---|---|---|
+| **flower**   | 0.145 | 0.140 | 0.140 | **~3%** of init |
+| **monalisa** | 0.110 | 0.106 | 0.106 | **~4%** |
+| **cat**      | 0.169 | 0.106 | 0.102 | ~40% |
+| **mri**      | 0.292 | 0.133 | 0.126 | ~57% |
+
+(r=20 same pattern: flower/monalisa barely move, cat/mri improve a lot.)
+
+### What it settles
+
+1. **`lr=0.1` is not broadly broken.** Training helps on all 4 real images +
+   video (§42[C]); §42's synthetic degradation ([A]/[B]) does **not**
+   generalise. §41/§42's "trap" is a signed-Gaussian synthetic artefact.
+2. **`lr=0.03` beats `lr=0.1` in 16/16 rows**, by ~5–10% on the harder sets
+   (mri, cat). `DECISIONS.md` §9's magic constant is mis-set high — a free
+   small win, no risk.
+3. **The descent's value is data-dependent, and predictably so.**
+   Flower/monalisa (smooth, low-frequency) — the SVD-of-`sqrt` init already
+   captures ~96% and 2000 epochs add ~3%. Cat/mri (high-frequency detail) —
+   the init misses it, training recovers 40–57%. Maps onto §9.11 (spectral
+   bias) / §12 (multigrid): the descent's job is the high frequencies the
+   rank-`r` init cannot place.
+
+### (a) Composability
+
+An **init-quality gate** (§42(c)) + **per-dataset `lr`** compose into: measure
+`init_rel`; if `< τ` skip training (flower/monalisa → stop at epoch 0 for a ~3%
+cost); else train at `lr≈0.03`. This is `EarlyStop` (§12) taken to its limit —
+fire before epoch 1 — and it composes with everything downstream because it
+just changes when the loop exits.
+
+### (b) Contradictions
+
+1. **The rank sweep's time column (`DECISIONS.md` §3) vs the descent being
+   near-useless on smooth images.** For flower/monalisa, HadNet's *reported
+   time* is ~2000 epochs of compute producing a result the init already had.
+   The paper's time for those datasets overstates the *necessary* cost by
+   20–30x — and any speedup claim (bf16, `h_prod`) on that compute is speeding
+   up work that need not happen.
+2. **§11 (ladder) / §17 (homotopy) / §8.1 (Anderson) all assume the descent
+   matters.** For half the real datasets it barely does; elaborate
+   convergence machinery there is optimising a near-no-op.
+3. **§40's M1 ("~300 epoch knee") vs mri/cat** — those keep improving well past
+   300 (mri r=20 best at ~0.053 needs the full run). Knee is data-dependent,
+   again — flower/monalisa knee ≈ epoch 50, mri knee ≈ epoch 1000+.
+
+### (c) Further approaches on this line
+
+- **Report `frac_closed = (init − final) / (init − noise_floor)` per dataset.**
+  One number that says whether the descent earned its compute.
+- **Route by spectral content.** Cheap FFT/DCT energy ratio of the input →
+  predicts whether this dataset is init-dominated or descent-dominated →
+  picks epoch budget and `lr` before training.
+- **Return the best-seen factors, not the last.** `HadamardNet_train`
+  (`main_video.py:104`) returns `model.W1` at loop exit; `EarlyStop` tracks
+  `best` as a float but snapshots no parameters. cat r=10 final 0.106 vs
+  best 0.102, mri r=20 final 0.060 vs best 0.059 — HadNet ships a ~2–3% worse
+  result than it transiently reached. Free fix: snapshot best params.
+- **Two-phase `lr`:** `0.1` for the first ~100 epochs (fast on the
+  init-dominated part), drop to `0.01` (the detail-recovery phase mri/cat
+  need). A schedule matched to the two-regime structure the data shows.
+
+### (d) Gap + mitigation
+
+**Gap.** `DECISIONS.md` §3 / Table 9 have no `init_rel` row, so a reader cannot
+see that for **half the benchmark datasets the iterative part contributes
+almost nothing** — the method there is effectively a closed-form
+initialisation formula.
+
+**Mitigation.** Add `init_rel` and `frac_closed` to every table. Datasets with
+`frac_closed < 0.15` get flagged "init-dominated"; for those the paper either
+drops the descent or states why it is kept. This also directly answers §42's
+open question per-dataset.
+
+**Open question to argue about.** For the init-dominated datasets, is HadNet's
+contribution an **initialisation formula** — truncated SVD of `sqrt(|X|)` with
+a scale split, `O(n^4)`, closed form — rather than a training method? If that
+formula alone beats TBCD/TAGD on flower/monalisa (untested), that subset wants
+a separate, cleaner claim and no epoch loop at all.
+
+**Failure mode.** `frac_closed` depends on the noise-floor estimate, and
+`DECISIONS.md` §16 shows the injected `0.01·randn` puts the target itself out
+of range — so the "floor" is fuzzy and `frac_closed` near the floor is
+unreliable. Report `init` and `final` raw alongside it; do not let the derived
+ratio hide the inputs.
+
+---
+
+## 44. BCD vs HadNet from the same init — the deficiency is Adam, not the model
+
+§43's open question, run. Same 4 images + `0.01·randn`, `r∈{10,20}`:
+plain TSVD of `X`, the Hadamard init alone, HadNet (1500 ep, `lr=0.03`), and
+`Hadamard_BCD` — which uses **`SVD_initialization` + exact block least-squares**
+(`hadamardLS_exact`), 100 iters.
+
+| dataset | r | TSVD | Had-init | HadNet | **BCD** |
+|---|---|---|---|---|---|
+| flower | 10 | 0.141 | 0.145 | 0.140 | **0.086** |
+| flower | 20 | 0.096 | 0.100 | 0.099 | **0.041** |
+| monalisa | 10 | 0.107 | 0.111 | 0.106 | **0.071** |
+| monalisa | 20 | 0.075 | 0.077 | 0.074 | **0.047** |
+| cat | 20 | 0.111 | 0.116 | **0.072** | 0.076 |
+| mri | 20 | 0.177 | 0.191 | **0.054** | 0.060 |
+
+### What it settles
+
+1. **The Hadamard init is *worse* than plain TSVD** on every row (flower r=10:
+   0.145 vs 0.141; mri r=20: 0.191 vs 0.177). §43's "HadNet ≈ init formula"
+   open question is dead — the formula loses to truncated SVD, so "just use the
+   init" means "use something worse than the trivial baseline".
+2. **On smooth images HadNet ≈ TSVD** (flower/monalisa: HadNet within 0.001 of
+   TSVD). The whole apparatus — sqrt-split init + 1500 epochs of Adam —
+   **matches plain truncated SVD** there.
+3. **BCD reaches ~2x lower error than HadNet on smooth images** (flower r=20:
+   0.041 vs 0.099), from **the same SVD init family**. It proves the rank-10
+   Hadamard model *can* fit flower to 0.041; Adam-from-the-sqrt-basin does not.
+   The deficiency is the **optimiser**, isolated — not the model (BCD fits it),
+   not the init (BCD shares it), not the data.
+4. **HadNet edges BCD on high-detail images** (cat/mri r=20). So it is not
+   uniformly worse — the split is smooth→BCD, detailed→HadNet.
+
+This revives §41's basin-trap in a **mild, real-data** form: §42 called the
+trap synthetic; here BCD finds a 2x-better basin on real images that HadNet's
+Adam misses.
+
+### (a) Composability
+
+**BCD's exact block-LS update + HadNet's systems levers.** §15 (Schur
+complement) is precisely how to make batched block-LS fast on GPU; §15 +
+"BCD wins on half the real data" is now a concrete plan, not a hypothesis. bf16
+(1.63x) and `h_prod` batching compose with a block-LS inner loop the same way
+they compose with Adam. `EarlyStop` (§12) composes on the outer BCD sweeps.
+
+### (b) Contradictions
+
+1. **`DECISIONS.md` §3 ranks BCD "5x slower, use HadNet"** — but at **2x lower
+   error on smooth data**. "Slower" and "worse" were assumed to coincide; they
+   do not. No error-vs-wall-clock frontier exists to say which dominates where.
+2. **`DECISIONS.md` §11 rejected Lipschitz block-stepping as "worse on both
+   axes"** — but that was a *joint* `1/L` step. True cyclic BCD
+   (`hadamardLS_exact`, what `Hadamard_BCD` runs) is the regime §11 itself
+   names as "where `1/L` is justified", and it *wins on error* here. §11's
+   rejection does not extend to the method actually measured.
+3. **§8.1 (Anderson) accelerates convergence to whatever basin Adam finds** —
+   on flower that basin is 2x worse than BCD's. Speeding the wrong destination.
+
+### (c) Further approaches on this line (optimiser, not `k`)
+
+- **Hybrid: a few BCD sweeps, then Adam polish** (or Adam first, BCD to finish).
+  Cheap to try against the existing `Hadamard_BCD`.
+- **BCD warm-start for HadNet** — run 5–10 BCD sweeps as the init, then the
+  normal loop. Tests whether Adam can *hold* a good basin even if it cannot
+  *find* one.
+- **GPU-batched exact block-LS** (§15) — the only reason BCD is "5x slower" is
+  per-slice `scipy` solves (`DECISIONS.md` §4.4); batched on GPU it may not be.
+- **`hadamardLS_lipschitz`** (already in the repo; `lr = 1/σ²_max`,
+  `DECISIONS.md` §9) as a middle ground between exact-LS and Adam.
+
+### (d) Gap + mitigation
+
+**Gap.** `DECISIONS.md` §3 compares methods at their *default* iteration counts,
+never on an error-vs-wall-clock frontier. "BCD: 5x slower, lower error" and
+"HadNet: faster, higher error" are incomparable without it.
+
+**Mitigation.** Run BCD and HadNet at 4–5 iteration budgets each, on the same
+data and GPU, plot rel-error vs wall-clock. The frontier shows which method
+dominates at each time budget — and whether BCD's smooth-image advantage
+survives a matched-time comparison.
+
+**Open question to argue about.** If BCD (classical alternating least squares)
+reaches 0.041 on flower where HadNet (Adam + epochs + `lr`) reaches 0.099 from
+the same init, is the "neural" framing (the `HadNet`/`HadDNN` naming, the
+training loop) a **step backward from ALS** for this problem? The contribution
+may be the `r²`-expressive *parameterisation*, with the *optimiser* choice
+being a regression.
+
+**Failure mode.** This is single 128×128 images; BCD's per-slice LS solves
+were not timed on the *tensor* case, where `DECISIONS.md` §3 has TBCD at 283 s
+vs HadNet 57 s (5x). On video the 180× per-slice solves could dominate and
+erase BCD's error advantage on a time basis. Run the tensor frontier before
+concluding BCD is the better optimiser generally.
+
+---
+
+## 45. Adam is unstable *in* a good basin — the warm-start hybrid fails
+
+§44(c)'s "BCD warm-start for HadNet", run. Take BCD's converged factors, hand
+them to Adam (`lr=0.03`), watch what happens. `r=20`, images + `0.01·randn`:
+
+| dataset | pure Adam | BCD | BCD→Adam (200 ep) | BCD→Adam (+1300 ep) |
+|---|---|---|---|---|
+| flower   | 0.099 | **0.041** | 0.054 | 0.045 |
+| monalisa | 0.074 | **0.047** | 0.062 | 0.058 |
+| mri      | **0.054** | 0.060 | 0.116 | 0.108 |
+
+### What it settles
+
+**Adam does not hold a good basin — it walks out of one.** Handed BCD's 0.041
+solution on flower, Adam degrades it to 0.054 in 200 epochs and never returns
+to 0.041 over 1300 more. On **mri it is catastrophic**: BCD's 0.060 → Adam
+**0.116** (2x worse), clawing back only to 0.108. And note pure-Adam-from-SVD
+reaches 0.054 on mri — so Adam is *fine* from the sqrt-init basin and *blows
+up* from the BCD basin. The two basins are different, and `lr=0.03` is only
+stable in one of them.
+
+- **§44(c)'s "BCD warm-start for HadNet" is dead.** Adam undoes the warm start.
+  The only viable hybrid direction is **Adam → BCD** (BCD finishing), not the
+  reverse.
+- **This is the sharpest evidence yet that `lr` is the core deficiency**
+  (`DECISIONS.md` §9). §43 showed `lr=0.1` slightly too big; §45 shows `lr=0.03`
+  is *unstable near good solutions*. The method needs a decaying / line-searched
+  step (§42(c)) or a non-gradient update (BCD, §15, §25, §1).
+
+### (a) Composability
+
+A **decaying-`lr` / line-search (§42(c)) + an exact-block-LS finisher (§15) +
+`squared_loss`** compose into "Adam for the cheap early descent, a stable
+method for the endgame". The finisher can be BCD, GPU-batched block-LS (§15),
+or simply Adam with `lr → 0`. What provably does **not** compose: BCD → Adam
+(measured broken here), and §8.1 Anderson on Adam near a good point
+(accelerates the walk-out).
+
+### (b) Contradictions
+
+1. **§44(c) proposed BCD-warm-start; §45 kills it.** Same section pair, one
+   run apart.
+2. **`DECISIONS.md` §11's reason for rejecting Lipschitz stepping** — "Adam
+   already adapts per-parameter from gradient second moments, so dividing by
+   `L` duplicates that and over-damps" — is contradicted here: near the BCD
+   basin on mri Adam **under**-damps and diverges. The per-parameter second
+   moments are **not** supplying the stability a proper step-size bound would.
+   §11's rejection assumed an adaptivity that §45 shows fails exactly where it
+   is needed.
+3. **§40's M1 ("~300-epoch knee, `k` settled")** — on mri, Adam from a good
+   basin gets *worse* for 200 epochs then partially recovers over 1300. "More
+   epochs don't help" hides "more epochs first hurt, then repair".
+
+### (c) Further approaches on this line (stability, not speed)
+
+- **Cosine `lr` decay to ~0.** Would let Adam settle rather than orbit; standard,
+  untried here.
+- **Per-step trust region on `‖ΔW‖ / ‖W‖`.** Cap the relative move; cheap, and
+  directly targets the mri blow-up.
+- **Gradient clipping.** One line; may tame the 0.060 → 0.116 excursion.
+- **Adam → SGD(+momentum) switch near convergence.** SGD has no second-moment
+  denominator to misbehave when gradients get small and anisotropic.
+- **Restart Adam's `m`/`v` buffers on any loss increase.** Stale moment
+  estimates from the descent phase may be driving the endgame instability.
+- **Exact-block-LS finisher** (§15) invoked once `EarlyStop` (§12) fires —
+  BCD's update, but only for the last few sweeps.
+
+### (d) Gap + mitigation
+
+**Gap.** No experiment has measured the landscape curvature at the *two*
+distinct regions this section exposes — the sqrt-init basin (Adam stable) vs
+the BCD optimum (Adam unstable). §29(d) proposed a Lanczos `κ` at "the plateau"
+as if there were one.
+
+**Mitigation.** Compute the top/bottom Hessian eigenvalues (a few HVPs) at
+**both** points, for mri specifically. If `κ` at the BCD optimum is orders
+larger, the loss-optimal solution sits in a region no fixed-`lr` first-order
+method can occupy — which reframes HadNet's achievable error as "wherever Adam
+is stable", generally above the true optimum.
+
+**Open question to argue about.** Is the true minimiser **unreachable** by any
+fixed-`lr` first-order method for datasets like mri, so that BCD (exact LS, no
+gradient step) is not just faster-to-good-error but *the only way* to the
+actual optimum? If so, every gradient-based section (§1 as gradient method,
+§8.1, §17, §22, §33) is capped below BCD by construction.
+
+**Failure mode.** BCD's factors go CPU-numpy → GPU-tensor and BCD runs its own
+`scaling()` rebalancing — so the handoff to Adam carries a **gauge** different
+from `svd_initialize`'s (§18). The mri blow-up could be partly a gauge shock,
+not pure `lr` instability. Re-run with the BCD output balanced (§8.2 / §18)
+before Adam to separate the two causes.
+
+---
+
+## 46. The BCD basin is 155,000x more curved — gauge imbalance *is* the conditioning
+
+§45's failure-mode check + §45(d)'s curvature probe, both run, on mri, `r=20`,
+squared loss.
+
+| quantity | value |
+|---|---|
+| top Hessian eigenvalue at the **SVD-init basin** (Adam converges here) | 6.6e2 |
+| top Hessian eigenvalue at the **BCD optimum** (Adam diverges from here) | 1.0e8 |
+| **ratio** | **~1.5e5x** |
+
+BCD→Adam(`lr=0.03`) on mri, with the fixes §45(c) proposed:
+
+| handoff | rel err |
+|---|---|
+| plain (§45) | 0.081 |
+| **gauge-balanced first** (`‖W‖=‖H‖` per pair) | **0.056** |
+| gradient clipping (1.0) | 0.102 (worse) |
+| cosine `lr` decay | 0.078 |
+| **`lr` 0.03 → 0.003** | **0.059** |
+
+### What it settles
+
+- **The BCD optimum sits in a region five orders of magnitude more curved than
+  the SVD-init basin.** A step size safe at `λ_max ≈ 660` is catastrophic at
+  `λ_max ≈ 1e8`. This is the *measured, quantified* cause of §45's blow-up —
+  not a mystery, a curvature mismatch.
+- **§45's "`lr` is the core deficiency" was one level too shallow.** The root
+  is **gauge**: balancing `‖W‖=‖H‖` moves to a flat equivalent point and Adam
+  is immediately stable (0.056, beating BCD's own 0.060). Dropping `lr` 10x
+  also works (0.059) — because a smaller step tolerates the curvature. Both
+  fixes address the same 1e8-vs-660 fact from opposite ends.
+- **Gradient clipping fails** (0.102) — clipping the *direction*'s norm does
+  nothing about a step that is scale-wrong for the local curvature.
+
+### (a) Composability
+
+**Gauge-balance (§8.2/§18) now makes §44's "Adam → BCD → Adam-polish" pipeline
+viable** where raw BCD→Adam was broken (§45): `Adam early → BCD sweeps →
+balance → Adam polish`. §1 (Riemannian tuning-free Gauss-Newton step) and §8.3
+(K-FAC) would both auto-absorb the 1.5e5x ratio — §46 is the measured reason
+they matter, upgrading them from "principled" to "addresses a quantified
+failure". `hadamardLS_lipschitz` (already in the repo, `lr = 1/σ²_max`) is the
+cheap version and needs no new code.
+
+### (b) Contradictions
+
+1. **§40's M3 called the balancedness drift (~0.2) "moderate".** §46 shows a
+   gauge that off can coincide with a `1.5e5x` curvature blow-up. "Moderate
+   drift" understated it — the metric (`‖WᵀW−HHᵀ‖/‖WᵀW‖`) is not linear in the
+   conditioning damage.
+2. **§36 filed gauge-fixing as "connective tissue — do it once at the end".**
+   §46 says it may need to be **frequent**, because curvature blows up locally
+   as the iterate moves, not just at the final point.
+3. **§45 concluded "`lr` is the deficiency"; §46 refines to "gauge is, `lr` is
+   its symptom".** A single global `lr` cannot serve a `[660, 1e8]` curvature
+   range no matter its value — the fix is to flatten the range (balance) or
+   track it (`1/λ_max` step), not to pick a better constant.
+
+### (c) Further approaches on this line
+
+- **Log `λ_max` along the whole Adam trajectory**, not just endpoints — does it
+  spike mid-training then relax, and does that coincide with the §11 plateau?
+- **Balance every `N` epochs** (§36's checkpoint idea, now with a measured
+  motivation) — keep `λ_max` from drifting up.
+- **`lr_t = c / λ_max,t`** with `λ_max` from one power iteration every few
+  epochs — the adaptive version; `hadamardLS_lipschitz` already computes the
+  ingredient.
+- **Report `κ` (or `λ_max`) as a standard diagnostic column** next to rel-error
+  in every experiment.
+
+### (d) Gap + mitigation
+
+**Gap.** `DECISIONS.md` measures error, time, PSNR, SSIM — **never curvature**.
+The entire plateau / conditioning discussion (§1, §11, §29) has been
+qualitative. One HVP power iteration (~30 lines, ran this session) yields
+`λ_max`.
+
+**Mitigation.** Log `λ_max` every ~100 epochs for the standard HadNet fits on
+all datasets. A spike marks where a balance step or `lr` drop is needed; a flat
+low `λ_max` throughout means the conditioning story does not apply to that
+dataset and §1/§8.2/§18 can be skipped for it.
+
+**Open question to argue about.** Is the SVD-of-`sqrt` init "good" only because
+it starts in a **low-curvature** (`λ_max ≈ 660`) region where Adam is stable —
+i.e. its value is *conditioning*, not *approximation quality* (§44 showed it is
+a worse approximation than plain TSVD)? If so, "better init" (§38) should mean
+"lower-curvature init", a different objective from "lower-error init", and the
+two may not point the same way.
+
+**Failure mode.** `λ_max` from 30 power iterations from a random start may not
+have converged at `1e8`; and this is the **squared**-loss Hessian, while the
+repo minimises the **unsquared** norm (`DECISIONS.md` §11), whose Hessian
+blows up separately as `‖R‖→0`. Re-measure with more iterations and on the
+actual objective before treating `1.5e5x` as exact — the direction is robust,
+the magnitude may not be.
+
+---
+
+## 47. `λ_max` along a healthy HadNet run is flat and low — the 1.5e5x is a BCD-optimum property, not a trajectory one
+
+§46(c)'s "log `λ_max` along the whole trajectory", run. mri, `r=20`, SVD init +
+Adam(`lr=0.03`), `λ_max` and balancedness every 150 epochs, both loss forms.
+
+| epoch | rel | `λ_max` (unsq) | `λ_max` (sq) | balance |
+|---|---|---|---|---|
+| 0    | 0.191 | 1.1e1 | 4.0e2 | 0.00 |
+| 150  | 0.059 | 4.6e1 | 4.9e2 | 0.19 |
+| 600  | 0.056 | 5.7e1 | 5.8e2 | 0.20 |
+| 1200 | 0.054 | 6.3e1 | 6.4e2 | 0.24 |
+
+### What it settles
+
+- **On a normal HadNet run, `λ_max` never spikes** — it drifts `11→63`
+  (unsquared) over 1200 epochs and sits flat. The `1e8` of §46 is a property of
+  **BCD's optimum specifically**, not a place the Adam trajectory visits. So
+  "gauge imbalance is the conditioning" (§46) explains **why BCD's better basin
+  is Adam-unreachable**, *not* why HadNet's own run plateaus.
+- **The mri plateau (0.059 → 0.054 over 1000+ epochs) happens at flat, low
+  curvature.** `λ_max ≈ 60` → a stable step is `~1/60 ≈ 0.017`; `lr=0.03` is
+  mildly over that (consistent with §43's "0.03 beats 0.1", and the mild
+  wobble), but curvature is not the plateau's cause.
+- **92% of the error drop is in the first 150 epochs** (0.191 → 0.059); the
+  rest of the run is a slow low-curvature crawl. Matches §40's M1 "~300-epoch
+  knee" and §43's data-dependence.
+- **Wrong dataset for the question.** mri is where HadNet *beats* BCD
+  (0.054 vs 0.060, §44). The interesting case — where HadNet is stuck at 0.099
+  vs BCD's 0.041 — is **flower**, and its `λ_max` trajectory was not measured.
+
+### (a) Composability
+
+§47 **bounds** where the conditioning fixes apply. §8.2 / §18 / §1 / §8.3 add
+nothing to a standalone HadNet run on a dataset where it already converges at
+low `λ_max` (mri) — they only compose with the **Adam→BCD→balance→polish**
+pipeline (§46(a)) to reach the high-curvature better basins on the datasets in
+§44's "smooth, BCD wins" class. Conditioning work is **dataset-conditional**.
+
+### (b) Contradictions
+
+1. **§40's M2** inferred "oscillating gradient at the plateau ⇒ conditioning".
+   §47 measures **low, flat `λ_max`** at that same plateau — M2's inference was
+   wrong; the oscillation is not curvature (shallow non-convex valley, or the
+   unsquared-norm kink, though `‖R‖≈55` is far from 0 so not that either).
+2. **§46 "gauge imbalance *is* the conditioning".** §47 shows balancedness
+   `≈0.23` **and** low `λ_max` co-occurring on the normal run — so a given
+   imbalance is benign here and catastrophic at the BCD point. The
+   imbalance→curvature link is **not monotonic**; location matters as much as
+   magnitude.
+3. **§29's premise** ("the landscape is ill-conditioned"): on mri, for the
+   trajectory Adam actually takes, the measured answer is **no**.
+
+### (c) Further approaches on this line
+
+- **Run §47's trajectory on flower and monalisa** — the HadNet-stuck datasets.
+  This is *the* missing measurement.
+- **Measure `λ_min`, not just `λ_max`.** `κ = λ_max/λ_min`; `λ_max ≈ 60` with
+  `λ_min ≈ 1e-4` is still `κ ≈ 6e5`. Inverse iteration or Lanczos both ends.
+- **Directional curvature along the update step** — `dᵀHd / dᵀd` for the actual
+  Adam direction `d`. Cheaper than the spectrum and more relevant to whether
+  the *step* is stable.
+- **Loss-vs-`lr` sweep at the plateau** — freeze at epoch 600, sweep `lr`,
+  plot loss after 50 steps. The empirical stability threshold, no HVPs.
+
+### (d) Gap + mitigation
+
+**Gap.** Every curvature number in the doc (§46, §47) is **mri** — the one
+dataset where HadNet already wins. The measurement was run where there is no
+problem to diagnose.
+
+**Mitigation.** Re-run the §47 trajectory (`λ_max`, `λ_min`, balancedness,
+rel-error every ~100 epochs) on **flower** and **monalisa**. If `λ_max` or `κ`
+climbs on those while rel-error sticks at ~0.099, the trajectory itself hits a
+conditioning wall and §8.2/§1/§8.3 are justified there. If `λ_max` stays flat
+and low like mri, the flower plateau is a **low-curvature bad basin** and the
+fix is basin escape (§17 homotopy, multi-start, BCD-finish), not
+preconditioning.
+
+**Open question to argue about.** Is the flower plateau (HadNet 0.099 vs BCD
+0.041) a low-curvature *bad basin* or a high-curvature *trajectory wall*? §46
+assumed the latter for BCD's optimum, but the two diagnoses call for opposite
+families of fix — basin escape vs preconditioning — and one flower `λ_max` run
+settles which.
+
+**Failure mode.** `λ_max` alone is not `κ`. mri's flat `λ_max ≈ 60` is
+consistent with both "well-conditioned" and "`λ_min` is tiny and Adam's
+per-coordinate scaling is hiding it while still capping final error". `λ_min`
+must be measured before "mri is not a conditioning problem" is stated as fact.
+
+---
+
+## 48. Flower/monalisa: a benign-curvature bad basin — the conditioning layer is retired for the trajectory
+
+§47(d)'s run: `λ_max`, `λ_min`, `κ`, balancedness over a full HadNet fit on the
+two datasets where it is stuck, plus an `lr` sweep at the plateau. Unsquared
+loss, `r=20`.
+
+| dataset | plateau rel | BCD rel | `λ_max` | `λ_min` | `κ` | `lr` sweep at plateau (0.1→0.001) |
+|---|---|---|---|---|---|---|
+| flower   | 0.095 | **0.041** | ~28 | ~0.04 | **~700** | 0.096 / 0.095 / 0.095 / 0.095 / 0.095 |
+| monalisa | 0.074 | **0.047** | ~35 | ~0.06 | **~600** | 0.078 / 0.074 / 0.074 / 0.074 / 0.074 |
+
+Flat `κ ≈ 700` for the entire run; `lr` across a 100x range gives the same
+plateau loss.
+
+### What it settles — definitively
+
+**The flower/monalisa plateau is a low-curvature bad local minimum, not a
+conditioning problem.** `κ ≈ 700` is well-conditioned; the `lr` sweep being
+dead flat across 100x rules out any step-size or stability cause (two
+independent methods agree). Adam has converged to a stationary point of the
+loss that is **2x worse than BCD's**, and the landscape there is benign.
+
+- **§8.2 / §18 / §1 / §8.3 / §29 / §36 will not help the trajectory.** They
+  precondition or re-gauge an already-benign landscape (`κ 700 → 700`). §46's
+  `1e8` was real but it is BCD's *destination*, never a point on HadNet's path
+  (§47) — so gauge-fixing the trajectory fixes nothing.
+- **§40's M2 ("conditioning") and §29's premise are now measured false** for
+  the path Adam takes, on every dataset probed (mri §47, flower/monalisa §48).
+- **The problem is basin escape.** §17 (homotopy / graduated non-convexity),
+  §11 (rank ladder), multi-start, §20 (boosting), and BCD itself — methods
+  that change *which* stationary point is reached — are what is left.
+
+### (a) Composability
+
+Basin-escape methods compose trivially because they all wrap the existing loop:
+**multi-start + best-of-N + §17 (homotopy) + §11 (ladder) + §12 (`EarlyStop`
+per restart)** — run the fit several ways, keep the best; memory is free
+(`GPU.md` §6.5) so N restarts run in parallel. What does **not** add value:
+stacking two conditioning fixes (§8.2 + §8.3) when `κ ≈ 700`.
+
+### (b) Contradictions
+
+1. **The doc's "Suggested order (revised)" lists Riemannian / balancedness /
+   gauge as items 2, 3, 6.** §48 measures the trajectory as `κ ≈ 700` on every
+   dataset — those items fix a non-problem *for the run itself*. The order
+   needs rewriting around basin escape.
+2. **§46 vs §48.** §46's `1e8` justified gauge-fixing; §48 shows the trajectory
+   is `κ 700`. Consistent only if stated precisely: §46 was about *BCD's
+   optimum*, a point Adam never visits, so it does not motivate anything
+   applied to the HadNet run.
+3. **§8.1 (Anderson) on flower** — accelerates convergence to a stationary
+   point that is already reached by epoch 300 (§48 table) and is 2x too high.
+   Faster arrival at a bad basin.
+
+### (c) Further approaches on this line (basin escape, not preconditioning)
+
+- **Random / perturbed restarts, best-of-N.** Fit flower from 10 varied inits
+  (or 10 noised copies of the SVD init); keep the best. Embarrassingly
+  parallel.
+- **Basin hopping.** Converge, add noise, re-descend, repeat — keep the best
+  minimum seen.
+- **§17 homotopy with the additive model as `γ=0`** — the measured
+  benign-curvature bad-basin case is exactly graduated non-convexity's target.
+- **Population-based / evolutionary factor search** over a handful of candidates.
+- **Just use BCD.** It is the measured winner on this data class (§44) and is
+  already in the repo; its alternating exact-LS structure reaches basins Adam
+  does not.
+
+### (d) Gap + mitigation
+
+**Gap.** The doc carries ~10 conditioning/symmetry sections (§1, §8.2, §8.3,
+§9.1, §9.3, §18, §29, §36, §46, §47) and ~2 on basin escape (§11, §17). The
+measurements (§46–§48) say the trajectory's problem is basin escape. The doc's
+mass is inversely proportional to where the measured problem is.
+
+**Mitigation.** Before any more analysis: run **multi-start on flower** — 10
+inits, keep the best. If best-of-10 reaches ~0.041 (BCD's level), the flower
+failure is "one bad starting point" and multi-start (trivial, parallel) solves
+it — folding this line into §38 (init). If best-of-10 is still ~0.095, it is a
+broad attractor and needs §17 / BCD.
+
+**Open question to argue about.** Is HadNet-Adam's bad basin on flower an
+artefact of the **specific** SVD-of-`sqrt` init (§38's line — one bad start) or
+a **broad attractor** most inits fall into (the loss geometry — §17 / BCD)?
+Multi-start with varied inits answers it in one run, and decides whether the
+fix lives in the init line or the optimiser line.
+
+**Failure mode.** `λ_min` came from a 50-step shifted power iteration, which
+converges slowly for clustered spectra — true `κ` could be somewhat higher than
+700. But the `lr` sweep being flat across 100x is independent of the HVP
+estimate, and the two agree, so "not a conditioning problem" is robust even if
+the `κ` figure is loose.
+
+---
+
 ## Suggested order (revised — supersedes the list below)
 
 1. **GPU end-to-end baseline** — nothing can be claimed without it (Sec. 10, row 1).

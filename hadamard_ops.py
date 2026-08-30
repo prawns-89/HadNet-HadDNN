@@ -333,3 +333,48 @@ def optimal_k(R):
     """Predicted cost-optimal number of factors for target effective rank R."""
     import math
     return math.log(R)
+
+
+# --------------------------------------------------------------------------
+# Discrepancy-principle stopping  (RESEARCH.md Sec. 9.4)
+# --------------------------------------------------------------------------
+#
+# EarlyStop has no usable operating point (DECISIONS.md Sec. 17): patience>=100
+# never fires, patience=50 costs up to +171% error. The criterion is wrong, not
+# mistuned -- it watches loss *improvement*, which says nothing about whether
+# the remaining residual is signal or noise.
+#
+# The classical fix, from geophysical inverse problems and data assimilation:
+# stop when the residual reaches the KNOWN noise level. Fitting below it is
+# fitting noise. The scripts inject exactly `sigma * randn` (sigma=0.01), so
+#
+#     E||noise||_F = sigma * sqrt(N)      N = number of entries
+#
+# is analytic -- no tuning, and it transfers across shapes and ranks for free.
+
+class DiscrepancyStop:
+    """Stop when the residual norm reaches the noise floor.
+
+        stop = DiscrepancyStop(sigma=0.01, n_entries=X.numel())
+        for epoch in ...:
+            if stop.step(loss.item()):     # loss must be ||residual||_F
+                break
+
+    tau > 1 stops earlier (more conservative about noise), tau < 1 later.
+    """
+
+    def __init__(self, sigma, n_entries, tau=1.0, min_epochs=20):
+        import math
+        self.target = tau * sigma * math.sqrt(n_entries)
+        self.min_epochs = min_epochs
+        self.epochs = 0
+        self.stopped = False
+
+    def step(self, residual_norm):
+        self.epochs += 1
+        if self.epochs < self.min_epochs:
+            return False
+        if residual_norm <= self.target:
+            self.stopped = True
+            return True
+        return False
