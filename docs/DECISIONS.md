@@ -638,3 +638,60 @@ there is still signal to extract below it. The rank-20 column shows how sharp
 the transition is (294 epochs at 1.2, 1622 at 1.0): the residual dwells near
 the floor, so tau is a real knob, not a free parameter. It is at least a
 *principled* knob -- scale-free and transferable -- unlike EarlyStop's patience.
+
+---
+
+## 22. Anderson + discrepancy stopping combined -- REJECTED
+
+Sec. 21 left one hypothesis open: Anderson's early-phase gain was worthless
+when running to 2000 epochs, but Sec. 19 now exits at ~300, so the acceleration
+might finally land in the regime actually used. It does not.
+
+| rank 25 | epochs | time | err(noisy) | err(CLEAN) | vs full |
+|---|---|---|---|---|---|
+| full 2000, no accel | 2000 | 7.23 s | 0.01621 | 0.02361 | - |
+| **discrepancy only** | **309** | **1.11 s** | 0.01910 | 0.02434 | **6.5x, +3.1%** |
+| + Anderson e10 | 405 | 1.75 s | 0.01910 | 0.02440 | 4.1x, +3.3% |
+| + Anderson beta=0.5 | 371 | 1.67 s | 0.01909 | 0.02434 | 4.3x, +3.1% |
+| + Anderson e25 | 355 | 1.45 s | 0.01910 | 0.02440 | 5.0x, +3.3% |
+
+Anderson makes it take **more** epochs (405 vs 309) and **more** time (1.75 s
+vs 1.11 s) for the same error. Worse on every axis.
+
+**Why the hypothesis failed.** Anderson's gain was in *loss at a given epoch*,
+but DiscrepancyStop triggers on the residual crossing a fixed threshold.
+Extrapolation makes the loss trajectory less monotone, so it takes longer to
+cross that threshold *reliably* -- the acceleration and the stopping rule
+interact destructively rather than compounding.
+
+The beta fix from Sec. 21 does work (371 epochs vs 405, no longer identical to
+beta=1.0), so damping is now genuinely tested. It is still worse than no
+Anderson at all.
+
+**Anderson is done.** Three configurations, two ranks, with and without early
+stopping, damped and undamped: no configuration beats the baseline.
+
+---
+
+## Summary of the optimisation programme so far
+
+| approach | branch | verdict | effect |
+|---|---|---|---|
+| Batched `h_prod` | `perf/batch-hprod` | **ADOPTED** | 27x, bit-identical |
+| Randomized SVD init | `perf/batch-hprod` | **ADOPTED** | O(n^5)->O(n^4), 4.3x on init |
+| `EarlyStop` (relative improvement) | `perf/batch-hprod` | **SUPERSEDED** | no usable operating point |
+| Discrepancy stopping tau=0.8 | `opt/discrepancy-stop` | **ADOPTED** | 6.5x fewer epochs, +3.1% |
+| Lipschitz step size | -- | rejected | worse on both axes |
+| k>2 Hadamard factors | `perf/batch-hprod` | rejected (provisional) | k=2 wins at every target |
+| [0,1] range constraint | -- | rejected | +0.01 dB |
+| Gauge fixing / balancing | `opt/balancedness` | rejected | no benefit, 7-21% slower |
+| Anderson / DIIS | `opt/anderson` | rejected | helps early, does not persist |
+| Anderson + discrepancy | `opt/anderson-discrepancy` | rejected | strictly worse than discrepancy alone |
+
+**Composed best**: batching (27x, free) x discrepancy stopping (6.5x, +3.1%)
+= **~176x over the original** at +3.1% clean error, on video at rank 25.
+
+Two findings that matter more than the speed:
+1. The benchmark rewards overfitting noise at rank 20+ (Sec. 19).
+2. The cheap route to the Riemannian idea is closed (Sec. 20) -- if that
+   direction is pursued it needs the real metric.
