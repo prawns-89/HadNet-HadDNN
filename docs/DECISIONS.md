@@ -565,3 +565,59 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 26. CORRECTION to Sec. 24 -- the rank finding does NOT generalise
+
+Sec. 24 concluded that "the paper's advantage is a parameter-budget artifact",
+from a matched-parameter sweep on **two images**. Re-run on **full-rank random
+data** -- the regime of the paper's headline Tables 2, 5 and 6 -- it inverts.
+
+100x100 full-rank random matrix, matched parameters (SVD at rank 2r):
+
+| rank | SVD(r) | **HadNet(r)** | SVD(2r) same params | winner |
+|---|---|---|---|---|
+| 2 | 0.962923 | 0.936151 | **0.927952** | SVD |
+| 5 | 0.910902 | **0.775927** | 0.829952 | **HadNet** |
+| 10 | 0.829952 | **0.540522** | 0.680000 | **HadNet** |
+| 20 | 0.680000 | **0.185916** | 0.427640 | **HadNet** |
+| 25 | 0.611893 | **0.067476** | 0.322372 | **HadNet, 4.8x** |
+| 40 | 0.427640 | **0.000000** | 0.080829 | **HadNet, exact** |
+| 50 | 0.322372 | **0.000000** | 0.000019 | **HadNet** |
+
+**HadNet wins at matched parameters at 6 of 7 ranks, and the margin grows
+enormously with rank.** At rank 40 it is numerically exact where SVD with the
+same storage still carries 8% error. Sec. 24's conclusion was wrong as stated.
+
+### What actually determines the outcome: the spectrum
+
+The two regimes are opposites, and the reason is the singular-value profile:
+
+- **Natural/medical images are approximately low-rank.** Their spectra decay
+  fast, so a truncated SVD is already near-optimal and there is little left for
+  extra expressiveness to capture. SVD wins at matched storage (Sec. 24).
+- **Full-rank random data has a flat spectrum.** Truncated SVD is a poor model
+  -- discarding directions costs real energy -- while the Hadamard product's
+  `r^2` expressiveness has genuine structure to exploit. HadNet wins, hugely.
+
+So the `r^2` claim is **not** unreachable in general. Sec. 18 (k>2) and
+Sec. 24 both tested it on data where SVD is already near-optimal, and read
+"no advantage here" as "no advantage".
+
+### What survives from Sec. 24
+
+The parameter accounting stands: HadNet at rank `r` stores `2r(m+n)` values
+against SVD's `r(m+n)`, and the paper compares at matched **rank**, not matched
+storage. That asymmetry is real and undisclosed. What is wrong is the
+conclusion drawn from it -- on the paper's own headline data the method wins
+the fair comparison anyway.
+
+**The finding that replaces it:** the paper's *image and video* applications
+(Tables 7 and 9) are its **weakest** case, not its strongest. On images, SVD at
+matched storage beats HadNet at every rank. The synthetic full-rank tables are
+where the method genuinely shines. A reader who takes Table 9 as the headline
+gets the opposite impression of where the method works.
+
+This also corroborates `research/rank200-remeasure` from a separate session,
+which independently found the basin behaviour to be a low-rank-image artefact.

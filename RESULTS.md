@@ -82,31 +82,41 @@ Table 9, Carphone video 144×144×3×60 at rank 10, on their RTX 4500 Ada:
 
 ## Three findings that contradict the paper
 
-### 1. The headline comparison gives HadNet twice the storage
+### 1. The comparison is unfair — but the method survives it on its own data
 
 HadNet at rank `r` stores four factors — `2r(m+n)` values. SVD at rank `r`
 stores `r(m+n)`. The paper compares at **matched rank**, so HadNet silently
-gets double the budget.
+gets double the budget. That asymmetry is real and undisclosed.
 
-Give SVD the same budget (rank `2r`), on 128mri.png:
+**But correcting it does not overturn the paper.** On full-rank random data —
+the regime of its headline Tables 2, 5 and 6 — HadNet still wins:
 
-| rank | SVD(r) | HadNet(r) | **SVD(2r) — same storage** |
+| rank | SVD(r) | **HadNet(r)** | SVD(2r) *same storage* | winner |
+|---|---|---|---|---|
+| 10 | 0.829952 | **0.540522** | 0.680000 | **HadNet** |
+| 25 | 0.611893 | **0.067476** | 0.322372 | **HadNet, 4.8×** |
+| 40 | 0.427640 | **0.000000** | 0.080829 | **HadNet, exact** |
+
+**The real finding is that it depends entirely on the spectrum.** On *images*,
+the same test reverses — SVD at matched storage wins at every rank, by up to
+170×:
+
+| rank (128mri.png) | SVD(r) | HadNet(r) | **SVD(2r) same storage** |
 |---|---|---|---|
-| 10 | 0.27724 | 0.25119 | **0.17549** |
 | 25 | 0.14382 | 0.12036 | **0.06435** |
-| 50 | 0.06435 | 0.04585 | **0.01869** |
 | 128 | 0.01022 | 0.00507 | **0.00003** |
 
-**SVD wins at every rank on both images tested, and the gap widens.** The
-paper's own rank-25 row flips: HadNet's 0.12036 beats SVD-at-25's 0.14382 but
-loses to SVD-at-50's 0.06435, which costs exactly the same to store.
+Natural and medical images are approximately low-rank: their spectra decay
+fast, so a truncated SVD is already near-optimal and extra expressiveness has
+nothing to capture. Full-rank random data has a flat spectrum, where truncation
+is costly and the Hadamard product's `r²` reach genuinely pays.
 
-On a natural image (`128cat.png`) HadNet barely wins even at matched rank
-(0.07042 vs 0.06994 at r=50) — twice the parameters buying nothing. The
-advantage appears specific to high-contrast, near-binary structure.
+**So the paper's image and video applications (Tables 7, 9) are its *weakest*
+case, not its strongest** — the opposite of the impression Table 9 gives.
 
-The paper also only tests ranks ≤25, i.e. **10–20% of the smaller dimension**;
-nothing above 20% is shown.
+*An earlier version of this section claimed the advantage was a
+parameter-budget artifact in general. That was measured on two images only and
+did not generalise; corrected in `docs/DECISIONS.md` §26.*
 
 ### 2. HadDNN's factor networks are actively harmful
 
