@@ -565,3 +565,82 @@ more likely indicts this setup than their result. Specifically:
 
 **Next step before concluding:** sweep lr per k, and compare against the Wertz
 initialisation rather than the k-th-root one.
+
+---
+
+## 25. HadDNN -- the factor networks are actively harmful, not merely redundant
+
+### The architecture
+
+Each `FactorNet` maps a factor to itself through a **64-unit bottleneck**:
+
+    Linear(d -> 64) -> LN -> ReLU -> Linear(64 -> 64) -> LN -> ReLU -> Linear(64 -> d)
+
+For the video at rank 25, `d = m*r*p = 648,000`:
+
+| | video, r=25 |
+|---|---|
+| factor values to represent | 2,592,000 |
+| FactorNet parameters | **334,384,896** (129x overparameterised) |
+| hidden bottleneck | 64 |
+| **final-layer bias alone** | **648,000 -- already full-dimensional** |
+
+The final layer's bias already spans the entire factor space. Everything
+upstream is a 64-dimensional correction bolted onto something complete.
+
+### Four regimes, image 256x256, rank 25, 1500 epochs
+
+| regime | trainable | time | rel err |
+|---|---|---|---|
+| **A** plain factors (= HadNet) | **76,800** | **1.00 s** | **0.03990** |
+| **C** FactorNet, weights FROZEN, bias only | 153,600 | 2.05 s | 0.10589 |
+| **B** FactorNet h=64 (= HadDNN as shipped) | 10,001,920 | 8.98 s | 0.21590 |
+| **D** FactorNet h=256 | 39,743,488 | 28.84 s | 0.45862 |
+
+**Monotone in the wrong direction: every increment of network makes it worse.**
+
+- Freezing 98.5% of HadDNN's parameters and training only the bias **halves the
+  error** (0.10589 vs 0.21590). The 9.85M weights interfere rather than help.
+- **Widening the bottleneck doubles the error again.** So 64 was never the
+  limitation, which rules out the obvious "make the network bigger" fix.
+- Plain factors beat all three simultaneously: 130x fewer parameters, 9x
+  faster, 5.4x lower error.
+
+### Fairness check -- it is not a step-size artifact
+
+`lr=0.1` is the paper's value and plausibly tuned for HadNet, so both were
+swept:
+
+| lr | A plain | B FactorNet |
+|---|---|---|
+| 0.300 | **0.10877** | 14.33855 |
+| 0.100 | **0.03990** | 0.21590 |
+| 0.030 | **0.03926** | 0.13586 |
+| 0.010 | **0.03882** | 0.19945 |
+| 0.003 | **0.03893** | 0.10278 |
+| 0.001 | **0.04092** | 0.06039 |
+
+**Plain factors win at every learning rate.** At each side's own best, plain
+gets 0.03882 (lr 0.01) against FactorNet's 0.06039 (lr 0.001) -- still 1.56x
+worse. FactorNet is still improving as lr falls, so it may narrow further below
+1e-3 with more epochs, but it has no route to being *better* than the simpler
+parameterisation it wraps.
+
+### Why
+
+`W = NN_theta(x)` is an exact reparameterisation of something already
+unconstrained -- it cannot represent anything the plain factors cannot. What it
+does change is the loss landscape: 10M coupled parameters feeding a 76,800-dim
+output through LayerNorm and ReLU that serve no representational purpose. Adam
+does worse on the equivalent problem.
+
+### Recommendation
+
+**HadDNN does not earn its place.** The paper's own Table 9 already points
+there (HadDNN 115.86 s / error 64.35 vs HadNet 57.36 s / 47.34); this explains
+the mechanism. The repo ships the fix: `HadamardDNN(..., use_factor_nets=False)`
+is exactly regime A.
+
+Note this also explains Sec. 12, where early stopping *improved* HadDNN's error
+(-0.08%) while costing HadNet 0.77%: stopping early regularises an
+overparameterised model that is actively degrading.
