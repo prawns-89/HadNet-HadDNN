@@ -35,8 +35,22 @@ print(f"    shape {tuple(got.shape)}  bit-identical={exact}  maxdiff={maxdiff:.3
 t_loop, t_batch = bench(h_prod_loop, A, B), bench(h_prod, A, B)
 print(f"    loop {t_loop*1e3:8.2f} ms   batched {t_batch*1e3:8.2f} ms"
       f"   -> {t_loop/t_batch:5.1f}x")
-if not exact:
-    ok = False; print("    FAIL: not bit-identical")
+
+# Equivalence must be judged per-device. On CPU both paths use the same BLAS
+# reduction order, so results are bit-identical. On GPU, cuBLAS uses a
+# different reduction order for a batched GEMM than for N separate GEMMs, and
+# float addition is not associative -- so float32 results differ by ~1 ulp.
+# The mathematical claim is checked in float64, where it must be EXACT.
+Ad, Bd = A.double(), B.double()
+exact64 = torch.equal(h_prod_loop(Ad, Bd), h_prod(Ad, Bd))
+ulps = maxdiff / (ref.abs().max().item() * torch.finfo(A.dtype).eps)
+print(f"    float64 exact={exact64}   float32 agreement={ulps:.1f} ulp")
+if not exact64:
+    ok = False; print("    FAIL: implementations differ in exact arithmetic")
+elif dev.type == "cpu" and not exact:
+    ok = False; print("    FAIL: CPU results should be bit-identical")
+elif ulps > 8:
+    ok = False; print(f"    FAIL: {ulps:.1f} ulp exceeds rounding tolerance")
 
 # ---- Lever 2a: batched exact SVD must match the loop ---------------------
 D = torch.randn(m, n, *p, device=dev)

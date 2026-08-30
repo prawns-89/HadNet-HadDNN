@@ -373,3 +373,87 @@ inconsistency with the tensor folders, which use the unsquared form.
 Applied: randomized `svd_init` (via `sklearn.randomized_svd`, niter=24),
 `EarlyStop` on both training loops, and the same `device='cuda'` crash fix.
 All four folders are now covered.
+
+---
+
+## 15. GPU results, and a correction to the "bit-identical" claim
+
+First run on the RTX 4050 (torch 2.11.0+cu128).
+
+| | CPU | **GPU** |
+|---|---|---|
+| `h_prod` batching | 8.8-9.1x | **41.5x** |
+| `svd_initialize` randomized | 2.0x | **4.3x** |
+
+41.5x confirms the prediction in Sec. 4.1: on CUDA the loop pays ~5-10us of
+launch overhead per slice against ~1us of work, 180 slices per call.
+6.72 ms -> 0.16 ms.
+
+### Correction
+
+"Bit-identical" was verified on CPU and stated unqualified. **On GPU it is
+false**, and the test caught it. Investigated:
+
+```
+float64:  exact=True   maxdiff=0.000e+00     <- identical in exact arithmetic
+float32:  1.4 ulp      (eps 1.2e-07)         <- pure rounding
+TF32 OFF, matmul precision "highest"         <- not a precision-mode artifact
+vs float64 truth:  loop 2.465e-06 | batched 3.042e-06
+```
+
+Not a bug: cuBLAS uses a different reduction order for a batched GEMM than
+for N separate ones, and float addition is not associative. The batched path
+is marginally *less* accurate than the original -- the opposite of what
+"bit-identical" implies, so worth stating plainly.
+
+**Consequence for benchmarking:** earlier guidance that error/PSNR/SSIM "must
+not move" holds on CPU only. On GPU they move in ~the 7th decimal. Movement
+in the 3rd decimal or beyond still means something broke.
+
+`tests/test_ops.py` now asserts the correct thing per device: exact in
+float64 (the mathematical claim), bit-identical on CPU, <=8 ulp on GPU.
+
+---
+
+## 16. Range constraint for image/video -- NOT worth adding
+
+Data is normalised to [0,1] and metrics use `clamp(0,1)`, but the loss is on
+the **unclamped** reconstruction (main_video.py:77) -- so the model optimises
+one quantity and is evaluated on another. Tested four ways of closing that gap
+(`tests/test_range.py`, 256x256 MRI, r=10):
+
+| mode | epochs | %>1 | rel err (clamped) | PSNR |
+|---|---|---|---|---|
+| plain (current) | 150 | 0.12% | 0.25112 | 20.69 dB |
+| clamp in loss | 150 | 0.25% | 0.25089 | **20.70 dB** |
+| penalty (lam=10) | 100 | 0.02% | 0.64156 | 12.54 dB |
+| sigmoid output | 100 | 0.00% | 0.92851 | 9.33 dB |
+
+**+0.01 dB.** Not worth it. The multiplicative structure is naturally
+self-limiting -- a product of two factors initialised from sqrt(|X|) on [0,1]
+data stays near [0,1] without being told to.
+
+Penalty and sigmoid are much worse, but that test is **confounded**: both were
+given an SVD init designed for the linear model. Sigmoid in particular would
+need a logit-space init to be judged fairly. Do not read those rows as
+refutations of the approach, only as "not a drop-in".
+
+### The finding that actually matters
+
+A rank sweep initially showed **17% of reconstructed values below zero**,
+which looked like severe overshoot. It is not the model -- it is the data:
+
+```
+clean MRI  : 33.28% of pixels are exactly 0 (black background)
++0.01 noise: 17.79% below 0,  0.07% above 1
+model      : 17.03% below 0,  0.34% above 1   <- tracks the target
+```
+
+The scripts add `0.01*randn` (main_image.py:267, main_video.py:294), which
+pushes half of the black background negative. **The benchmark evaluates
+PSNR/SSIM on clamped output against a target that is itself 17.79% out of
+range.** Genuine model overshoot is only the ~0.27% excess above 1.
+
+So a hard [0,1] constraint would be actively harmful: it would stop the model
+fitting a target the benchmark itself has moved out of range. Worth revisiting
+only if the noise injection is reconsidered.
