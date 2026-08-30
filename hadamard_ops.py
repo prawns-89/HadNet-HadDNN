@@ -262,3 +262,74 @@ class EarlyStop:
                 self.stopped = True
                 return True
         return False
+
+
+# --------------------------------------------------------------------------
+# k-factor Hadamard decomposition
+# --------------------------------------------------------------------------
+#
+# Generalises  X ~ (W1 H1) o (W2 H2)  to a product of k terms:
+#
+#     X  ~  (W1 H1) o (W2 H2) o ... o (Wk Hk)
+#
+# With each factor of rank r the effective rank is up to r^k, using kr(m+n)
+# parameters and ~k*r*mnp per epoch. So to reach a TARGET effective rank R you
+# need r = R^(1/k), and the per-epoch cost scales as
+#
+#     f(k) = k * R^(1/k)
+#
+# Minimising:  d/dk [ln k + (ln R)/k] = 1/k - ln R/k^2 = 0  =>  k* = ln R.
+#
+# Wertz, Vandaele & Gillis (arXiv:2504.13633) extend the MATRIX case to k>2;
+# the tensor case and this optimal-k tradeoff appear to be open.
+
+def h_prod_k(factors):
+    """Hadamard product of k low-rank terms.
+
+    factors: [(W1,H1), (W2,H2), ...] with W: (m,r,*p), H: (r,n,*p)
+    """
+    out = h_prod(*factors[0])
+    for W, H in factors[1:]:
+        out = out * h_prod(W, H)
+    return out
+
+
+def svd_initialize_k(D, r, k, randomized=True, niter=4):
+    """Rank-r initialisation for each of k factor pairs.
+
+    For k=2 the existing code uses sqrt(|X|), i.e. |X|^(1/2), so that the
+    product of two factors recovers X. Generalising: each factor targets
+    |X|^(1/k), with a single factor carrying sign(X) so the product's sign is
+    correct and the other k-1 stay positive.
+    """
+    nb = D.ndim - 2
+    Dt = D.permute(*range(2, D.ndim), 0, 1)                 # (*p, m, n)
+    m, n = Dt.shape[-2], Dt.shape[-1]
+    root = Dt.abs().clamp_min(1e-12).pow(1.0 / k)
+    q = min(r + 10, min(m, n))
+    use_rand = randomized and r < min(m, n) // 2
+    if use_rand and niter * q >= min(m, n):
+        niter = max(1, (min(m, n) // q) - 1)
+
+    out = []
+    for j in range(k):
+        M = root * torch.sign(Dt) if j == 0 else root
+        if use_rand:
+            U, S, V = torch.svd_lowrank(M, q=q, niter=niter)
+            sr = S[..., :r].sqrt()
+            W = U[..., :, :r] * sr.unsqueeze(-2)
+            H = (V[..., :, :r] * sr.unsqueeze(-2)).transpose(-2, -1)
+        else:
+            U, S, Vh = torch.linalg.svd(M, full_matrices=False)
+            sr = S[..., :r].sqrt()
+            W = U[..., :, :r] * sr.unsqueeze(-2)
+            H = sr.unsqueeze(-1) * Vh[..., :r, :]
+        out.append((W.permute(nb, nb + 1, *range(nb)),
+                    H.permute(nb, nb + 1, *range(nb))))
+    return out
+
+
+def optimal_k(R):
+    """Predicted cost-optimal number of factors for target effective rank R."""
+    import math
+    return math.log(R)

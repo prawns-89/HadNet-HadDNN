@@ -1,0 +1,81 @@
+Image shape: torch.Size([256, 256, 3]), Frobenius norm: 163.1397
+
+--- Rank 2 Approximations ---
+SVD Rank 2: Time 0.0915s, Error 79.368980, Rel Error 0.486509
+SVD Rank 2: PSNR 15.00, SSIM 0.3132
+QR Rank 2: Time 0.2336s, Error 98.163727, Rel Error 0.601716
+QR Rank 2: PSNR 13.12, SSIM 0.2906
+AGD Rank 2: Time 46.9160s, Error 69.663200, Rel Error 0.427016
+AGD Rank 2: PSNR 16.12, SSIM 0.3823
+IGD Rank 2: Time 1.4522s, Error 69.956017, Rel Error 0.428811
+IGD Rank 2: PSNR 16.08, SSIM 0.3823
+HBCD Rank 2: Time 8.2168s, Error 68.765327, Rel Error 0.421512
+HBCD Rank 2: PSNR 16.25, SSIM 0.3887
+HadamardNet Rank 2: Time 2.6438s, Error 69.588310, Rel Error 0.426557
+HadamardNet Rank 2: PSNR 16.13, SSIM 0.3893
+HadamardDNN Rank 2: Time 5.0882s, Error 69.318497, Rel Error 0.424903
+HadamardDNN Rank 2: PSNR 16.17, SSIM 0.3865
+
+--- Rank 5 Approximations ---
+SVD Rank 5: Time 0.0249s, Error 62.430042, Rel Error 0.382678
+SVD Rank 5: PSNR 17.13, SSIM 0.4308
+QR Rank 5: Time 0.0177s, Error 81.878349, Rel Error 0.501891
+QR Rank 5: PSNR 14.69, SSIM 0.3629
+AGD Rank 5: Time 47.9970s, Error 39.594666, Rel Error 0.242704
+AGD Rank 5: PSNR 21.11, SSIM 0.5773
+IGD Rank 5: Time 0.3945s, Error 43.322880, Rel Error 0.265557
+IGD Rank 5: PSNR 20.34, SSIM 0.5458
+HBCD Rank 5: Time 9.7795s, Error 39.647068, Rel Error 0.243025
+HBCD Rank 5: PSNR 21.10, SSIM 0.5842
+HadamardNet Rank 5: Time 2.3502s, Error 40.013290, Rel Error 0.245270
+HadamardNet Rank 5: PSNR 21.03, SSIM 0.5634
+HadamardDNN Rank 5: Time 5.8064s, Error 40.836510, Rel Error 0.250316
+HadamardDNN Rank 5: PSNR 20.87, SSIM 0.5520
+
+--- Rank 10 Approximations ---
+SVD Rank 10: Time 0.0233s, Error 45.400997, Rel Error 0.278295
+SVD Rank 10: PSNR 19.99, SSIM 0.5341
+QR Rank 10: Time 0.3119s, Error 58.800644, Rel Error 0.360431
+QR Rank 10: PSNR 17.61, SSIM 0.4244
+AGD Rank 10: Time 49.0456s, Error 21.162245, Rel Error 0.129719
+AGD Rank 10: PSNR 26.71, SSIM 0.7570
+IGD Rank 10: Time 8.0537s, Error 22.423967, Rel Error 0.137453
+IGD Rank 10: PSNR 26.20, SSIM 0.7342
+HBCD Rank 10: Time 11.6825s, Error 21.539875, Rel Error 0.132033
+HBCD Rank 10: PSNR 26.52, SSIM 0.7595
+HadamardNet Rank 10: Time 2.4345s, Error 20.009146, Rel Error 0.122650
+HadamardNet Rank 10: PSNR 27.22, SSIM 0.7717
+HadamardDNN Rank 10: Time 7.4442s, Error 38.880619, Rel Error 0.238327
+HadamardDNN Rank 10: PSNR 21.32, SSIM 0.5235
+
+--- Rank 20 Approximations ---
+SVD Rank 20: Time 0.0196s, Error 28.879145, Rel Error 0.177021
+SVD Rank 20: PSNR 24.01, SSIM 0.6718
+QR Rank 20: Time 0.2913s, Error 41.216251, Rel Error 0.252644
+QR Rank 20: PSNR 20.77, SSIM 0.5657
+AGD Rank 20: Time 50.5039s, Error 9.129078, Rel Error 0.055959
+AGD Rank 20: PSNR 34.33, SSIM 0.9151
+IGD Rank 20: Time 8.2766s, Error 10.894660, Rel Error 0.066781
+IGD Rank 20: PSNR 32.73, SSIM 0.8889
+HBCD Rank 20: Time 12.8414s, Error 9.845947, Rel Error 0.060353
+HBCD Rank 20: PSNR 33.61, SSIM 0.9030
+HadamardNet Rank 20: Time 2.4028s, Error 8.753571, Rel Error 0.053657
+HadamardNet Rank 20: PSNR 34.70, SSIM 0.9180
+HadamardDNN Rank 20: Time 11.7324s, Error 12.512778, Rel Error 0.076700
+HadamardDNN Rank 20: PSNR 31.42, SSIM 0.8587
+
+--- Rank 25 Approximations ---
+SVD Rank 25: Time 0.0195s, Error 23.771856, Rel Error 0.145715
+SVD Rank 25: PSNR 25.73, SSIM 0.7205
+QR Rank 25: Time 0.1611s, Error 34.498245, Rel Error 0.211464
+QR Rank 25: PSNR 22.36, SSIM 0.6130
+AGD Rank 25: Time 48.5558s, Error 6.880807, Rel Error 0.042177
+AGD Rank 25: PSNR 36.81, SSIM 0.9423
+IGD Rank 25: Time 7.8879s, Error 8.511072, Rel Error 0.052170
+IGD Rank 25: PSNR 34.97, SSIM 0.9222
+HBCD Rank 25: Time 14.0947s, Error 7.333494, Rel Error 0.044952
+HBCD Rank 25: PSNR 36.18, SSIM 0.9343
+HadamardNet Rank 25: Time 2.4020s, Error 6.402797, Rel Error 0.039247
+HadamardNet Rank 25: PSNR 37.39, SSIM 0.9458
+HadamardDNN Rank 25: Time 13.4416s, Error 37.748829, Rel Error 0.231390
+HadamardDNN Rank 25: PSNR 21.65, SSIM 0.5174

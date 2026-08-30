@@ -1,0 +1,97 @@
+Video tensor shape: torch.Size([144, 144, 60, 3])
+Initial Error: 808.481873
+SVD Rank 2: Time 0.1869s, Error: 260.935272, Rel Error 0.322747
+SVD Rank 2: Average PSNR: 17.44, Average SSIM: 0.4318
+QR Rank 2: Time 6.4991s, Error: 305.956268, Rel Error 0.378433
+QR Rank 2: Average PSNR: 16.03, Average SSIM: 0.3604
+AGD Rank 2: Time 51.8259s, Error: 203.659073, Rel Error 0.251903
+AGD Rank 2: Average PSNR: 19.61, Average SSIM: 0.5255
+IGD Rank 2: Time 52.5013s, Error: 203.608002, Rel Error 0.251840
+IGD Rank 2: Average PSNR: 19.62, Average SSIM: 0.5229
+BCD Rank 2: Time 144.4925s, Error: 200.739441, Rel Error 0.248292
+BCD Rank 2: Average PSNR: 19.74, Average SSIM: 0.5335
+HadamardNet Rank 2: Time 139.1234s, Error: 201.195312, Rel Error 0.248856
+HadamardNet Rank 2: Average PSNR: 19.72, Average SSIM: 0.5301
+HadamardDNN Rank 2: Time 162.7263s, Error: 209.977356, Rel Error 0.259718
+HadamardDNN Rank 2: Average PSNR: 19.36, Average SSIM: 0.5056
+Initial Error: 808.481873
+SVD Rank 5: Time 0.1845s, Error: 163.564758, Rel Error 0.202311
+SVD Rank 5: Average PSNR: 21.57, Average SSIM: 0.6136
+QR Rank 5: Time 5.3757s, Error: 215.282776, Rel Error 0.266280
+QR Rank 5: Average PSNR: 19.14, Average SSIM: 0.4829
+AGD Rank 5: Time 53.5215s, Error: 110.176552, Rel Error 0.136276
+AGD Rank 5: Average PSNR: 25.04, Average SSIM: 0.7279
+IGD Rank 5: Time 52.9462s, Error: 105.444633, Rel Error 0.130423
+IGD Rank 5: Average PSNR: 25.44, Average SSIM: 0.7400
+BCD Rank 5: Time 165.1699s, Error: 98.106430, Rel Error 0.121346
+BCD Rank 5: Average PSNR: 26.09, Average SSIM: 0.7628
+HadamardNet Rank 5: Time 150.9039s, Error: 94.840706, Rel Error 0.117307
+HadamardNet Rank 5: Average PSNR: 26.40, Average SSIM: 0.7747
+HadamardDNN Rank 5: Time 213.7707s, Error: 118.165833, Rel Error 0.146158
+HadamardDNN Rank 5: Average PSNR: 24.42, Average SSIM: 0.6997
+Initial Error: 808.481873
+SVD Rank 10: Time 0.1841s, Error: 108.962990, Rel Error 0.134775
+SVD Rank 10: Average PSNR: 25.16, Average SSIM: 0.7433
+QR Rank 10: Time 6.9414s, Error: 156.416473, Rel Error 0.193469
+QR Rank 10: Average PSNR: 21.95, Average SSIM: 0.6113
+AGD Rank 10: Time 61.3355s, Error: 127.643616, Rel Error 0.157881
+AGD Rank 10: Average PSNR: 23.72, Average SSIM: 0.6225
+IGD Rank 10: Time 53.6529s, Error: 60.253979, Rel Error 0.074527
+IGD Rank 10: Average PSNR: 30.41, Average SSIM: 0.8685
+BCD Rank 10: Time 193.8894s, Error: 51.757099, Rel Error 0.064018
+BCD Rank 10: Average PSNR: 31.77, Average SSIM: 0.8943
+HadamardNet Rank 10: Time 166.1955s, Error: 47.434475, Rel Error 0.058671
+HadamardNet Rank 10: Average PSNR: 32.58, Average SSIM: 0.9062
+HadamardDNN Rank 10: Time 291.1358s, Error: 66.835777, Rel Error 0.082668
+HadamardDNN Rank 10: Average PSNR: 29.46, Average SSIM: 0.8458
+Initial Error: 808.481873
+SVD Rank 20: Time 0.1830s, Error: 63.566429, Rel Error 0.078624
+SVD Rank 20: Average PSNR: 29.95, Average SSIM: 0.8700
+QR Rank 20: Time 5.0245s, Error: 93.088860, Rel Error 0.115140
+QR Rank 20: Average PSNR: 26.54, Average SSIM: 0.7788
+AGD Rank 20: Time 77.5690s, Error: 438.610504, Rel Error 0.542511
+AGD Rank 20: Average PSNR: 13.11, Average SSIM: 0.0882
+IGD Rank 20: Time 53.9994s, Error: 31.023386, Rel Error 0.038372
+IGD Rank 20: Average PSNR: 35.96, Average SSIM: 0.9454
+BCD Rank 20: Time 246.3752s, Error: 22.971663, Rel Error 0.028413
+BCD Rank 20: Average PSNR: 38.09, Average SSIM: 0.9617
+HadamardNet Rank 20: Time 195.8916s, Error: 19.176180, Rel Error 0.023719
+HadamardNet Rank 20: Average PSNR: 39.07, Average SSIM: 0.9672
+HadamardDNN Rank 20: Time 442.1791s, Error: 38.181599, Rel Error 0.047226
+HadamardDNN Rank 20: Average PSNR: 34.29, Average SSIM: 0.9298
+Initial Error: 808.481873
+SVD Rank 25: Time 0.1840s, Error: 51.370281, Rel Error 0.063539
+SVD Rank 25: Average PSNR: 31.80, Average SSIM: 0.9030
+QR Rank 25: Time 5.6636s, Error: 75.653419, Rel Error 0.093575
+QR Rank 25: Average PSNR: 28.36, Average SSIM: 0.8275
+AGD Rank 25: Time 89.7446s, Error: 880.838867, Rel Error 1.089497
+AGD Rank 25: Average PSNR: 8.47, Average SSIM: 0.0181
+IGD Rank 25: Time 54.4976s, Error: 25.161003, Rel Error 0.031121
+IGD Rank 25: Average PSNR: 37.41, Average SSIM: 0.9571
+BCD Rank 25: Time 285.6303s, Error: 16.593990, Rel Error 0.020525
+BCD Rank 25: Average PSNR: 39.49, Average SSIM: 0.9692
+HadamardNet Rank 25: Time 207.1171s, Error: 13.124731, Rel Error 0.016234
+HadamardNet Rank 25: Average PSNR: 39.90, Average SSIM: 0.9709
+Traceback (most recent call last):
+  File "/tmp/claude-1000/-home-prawns-SOP/5db9bb95-6436-4ed3-af01-66acd9906fe5/scratchpad/baseline/application-videos/main_video.py", line 629, in <module>
+    W1, H1, W2, H2 = HadamardDNN_train(A, rank)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/claude-1000/-home-prawns-SOP/5db9bb95-6436-4ed3-af01-66acd9906fe5/scratchpad/baseline/application-videos/main_video.py", line 232, in HadamardDNN_train
+    opt.step()
+  File "/home/prawns/SOP/HadNet-HadDNN/.venv/lib/python3.12/site-packages/torch/optim/optimizer.py", line 533, in wrapper
+    out = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/prawns/SOP/HadNet-HadDNN/.venv/lib/python3.12/site-packages/torch/optim/optimizer.py", line 81, in _use_grad
+    ret = func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/prawns/SOP/HadNet-HadDNN/.venv/lib/python3.12/site-packages/torch/optim/adam.py", line 248, in step
+    adam(
+  File "/home/prawns/SOP/HadNet-HadDNN/.venv/lib/python3.12/site-packages/torch/optim/optimizer.py", line 151, in maybe_fallback
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/prawns/SOP/HadNet-HadDNN/.venv/lib/python3.12/site-packages/torch/optim/adam.py", line 971, in adam
+    func(
+  File "/home/prawns/SOP/HadNet-HadDNN/.venv/lib/python3.12/site-packages/torch/optim/adam.py", line 791, in _multi_tensor_adam
+    exp_avg_sq_sqrt = torch._foreach_sqrt(device_exp_avg_sqs)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 160.00 MiB. GPU 0 has a total capacity of 5.64 GiB of which 10.44 MiB is free. Including non-PyTorch memory, this process has 5.61 GiB memory in use. Of the allocated memory 5.39 GiB is allocated by PyTorch, and 75.36 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)

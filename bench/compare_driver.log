@@ -1,0 +1,11 @@
+### IMAGES - full sweep, both trees
+=== images_baseline : application-images/main_image.py ===
+    exit=0 lines=81
+=== images_optimised : application-images/main_image.py ===
+    exit=0 lines=81
+### VIDEO - reduced maxIter so AGD/IGD do not dominate
+=== video_baseline : application-videos/main_video.py ===
+    exit=1 lines=97
+=== video_optimised : application-videos/main_video.py ===
+    exit=1 lines=97
+### DONE

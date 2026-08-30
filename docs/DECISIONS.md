@@ -457,3 +457,111 @@ range.** Genuine model overshoot is only the ~0.27% excess above 1.
 So a hard [0,1] constraint would be actively harmful: it would stop the model
 fitting a target the benchmark itself has moved out of range. Worth revisiting
 only if the noise injection is reconsidered.
+
+---
+
+## 17. End-to-end GPU comparison: main vs perf/batch-hprod (images, full sweep)
+
+Run via `bench/run_compare.sh` using a git worktree, so the working repo never
+changed branch. 256x256 MRI, ranks [2,5,10,20,25], all seven methods.
+
+| method | rank | base t | opt t | speedup | base err | opt err | d(err) |
+|---|---|---|---|---|---|---|---|
+| **HadamardNet** | 2 | 2.644 | 0.745 | **3.6x** | 0.42656 | 0.42668 | +0.0001 |
+| **HadamardNet** | 5 | 2.350 | 0.147 | **16.0x** | 0.24527 | 0.25251 | +0.0072 |
+| **HadamardNet** | 10 | 2.434 | 0.250 | **9.7x** | 0.12265 | 0.13261 | +0.0100 |
+| **HadamardNet** | 20 | 2.403 | 0.177 | **13.6x** | 0.05366 | 0.06619 | +0.0125 |
+| **HadamardNet** | 25 | 2.402 | 0.361 | **6.7x** | 0.03925 | 0.05149 | +0.0122 |
+| HadamardDNN | 2-25 | 5.1-13.4 | 1.5-6.3 | 1.2-3.4x | - | - | erratic |
+| SVD / QR / HBCD / AGD / IGD | all | - | - | **1.0x** | - | - | **0.00000** |
+
+**The baselines are untouched** -- SVD, QR, HBCD all show speedup 1.0x and
+error delta exactly 0.00000. That is the control: the optimisation moved only
+what it should.
+
+### Decomposition: what is free vs what is bought  [CORRECTED]
+
+An earlier version of this section blamed early stopping without evidence,
+from a harness that omitted the LR-decay schedule the real loop has. That run
+produced impossible numbers (2000 epochs scoring worse than 250) and its
+conclusion was withdrawn. Rerun faithfully, on video:
+
+| rank | config | epochs | time | rel err | vs original |
+|---|---|---|---|---|---|
+| 10 | loop + LR decay **[ORIGINAL]** | 2000 | 151.5 s | 0.05863 | - |
+| 10 | batched, no early stop | 2000 | 5.51 s | 0.05865 | **27.5x, +0.0%** |
+| 10 | batched + EarlyStop 1e-3 | 400 | 1.10 s | 0.06693 | 137.8x, **+14.1%** |
+| 25 | loop + LR decay **[ORIGINAL]** | 2000 | 196.6 s | 0.01623 | - |
+| 25 | batched, no early stop | 2000 | 7.27 s | 0.01623 | **27.1x, -0.0%** |
+| 25 | batched + EarlyStop 1e-3 | 200 | 0.72 s | 0.03551 | 273.4x, **+118.8%** |
+
+**Batching is genuinely free** -- identical error to five decimals on real
+data, confirming the bit-identical property end to end.
+
+**Early stopping is where the entire accuracy cost lives**, and it scales badly
+with rank: +14% at r=10, +119% at r=25.
+
+### EarlyStop has no usable operating point
+
+Swept patience 50..600 against min_rel 1e-3..1e-6:
+
+| patience | min_rel | epochs | speedup | d(err) r=10 | d(err) r=25 |
+|---|---|---|---|---|---|
+| 50 | 1e-3 | 250-500 | 103-219x | +12.7% | **+171.1%** |
+| >=100 | any | **2000 (never fires)** | ~27x | -0.3% | -0.1% |
+
+`min_rel` is not the knob -- 1e-3 and 1e-4 give byte-identical runs. Anything
+with patience >=100 never triggers at all. The choice is binary: **27x free, or
+~200x at 2-3x the error.** The criterion itself is wrong, not its threshold.
+
+**Action:** `EarlyStop` should not be on by default. Replaced by the
+discrepancy principle (RESEARCH.md Sec. 9.4) -- the scripts inject exactly
+`0.01*randn`, so the noise floor is analytic and needs no tuning.
+
+---
+
+## 18. k-factor Hadamard (k>2) -- theory predicts a win, measurement says no
+
+Implemented `h_prod_k` / `svd_initialize_k` generalising to
+`X ~ (W1 H1) o ... o (Wk Hk)`, with init targeting `|X|^(1/k)` per factor.
+
+**The theory.** k factors of rank r reach effective rank ~r^k using kr(m+n)
+parameters. For target effective rank R you need r = R^(1/k), so cost scales
+as f(k) = k*R^(1/k), minimised where d/dk[ln k + (ln R)/k] = 0, giving
+
+    k* = ln R
+
+For R=100 that predicts k*=4.6, and f(k) confirms: k=2 -> 20.0, k=3 -> 13.9,
+k=4 -> 12.6, k=5 -> 12.6, k=6 -> 12.9.
+
+**The measurement (256x256 MRI, r swept 2..30 per k).** Parameters needed to
+reach a target relative error -- the metric free of timing noise:
+
+| target err | k=2 | k=3 | k=4 | k=5 |
+|---|---|---|---|---|
+| 0.20 | 24,576 | **23,040** | 30,720 | 23,040 |
+| 0.15 | **30,720** | 36,864 | 30,720 | 38,400 |
+| 0.10 | **46,080** | 46,080 | 49,152 | 61,440 |
+| 0.07 | **61,440** | 69,120 | 61,440 | -- |
+| 0.05 | **92,160** | 138,240 | 122,880 | -- |
+
+**k=2 wins or ties at every target, and its margin grows as the target
+tightens** (at 0.05 it needs 92k params against k=3's 138k). k=5 diverges
+outright at r>=20 (rel err 3.98 and 1.14 -- worse than trivial).
+
+**Why the theory fails:** `r^k` is an *upper bound* on effective rank that the
+optimiser does not attain. Deeper products are harder to optimise, and the
+cross-Hadamard scaling symmetry (Sec. 1 of RESEARCH.md) compounds with each
+extra factor -- more symmetry, worse conditioning.
+
+**Confounds -- do NOT treat this as settled.** Wertz, Vandaele & Gillis
+(arXiv:2504.13633) report k>2 helping for matrices, so a flat contradiction
+more likely indicts this setup than their result. Specifically:
+- Adam `lr=0.1` was held fixed across all k; larger k plausibly needs a
+  different step size, and the k=5 divergence hints at exactly that.
+- The `|X|^(1/k)` init compresses values toward 1 as k grows, which degrades
+  the initialisation quality precisely where k is largest.
+- Single image, single dataset.
+
+**Next step before concluding:** sweep lr per k, and compare against the Wertz
+initialisation rather than the k-th-root one.
