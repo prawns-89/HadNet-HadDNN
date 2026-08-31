@@ -1,0 +1,204 @@
+<title>Supervisor Briefing</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{--ground:#f4f6f8;--panel:#fff;--sunk:#e8ecf0;--ink:#0d1520;--ink-2:#455263;--ink-3:#7b8798;
+--line:#d5dce4;--teal:#0d7f80;--teal-soft:#e2f1f1;--amber:#a8500c;--amber-soft:#fbeee2;
+--red:#9b2c2c;--red-soft:#fbeaea;--shadow:0 1px 2px rgba(13,21,32,.06),0 8px 24px -12px rgba(13,21,32,.18)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#0b1017;--panel:#131b25;--sunk:#0e151d;
+--ink:#e8eef5;--ink-2:#9fadbd;--ink-3:#6b7a8c;--line:#232f3d;--teal:#42b8b6;--teal-soft:#0f2a2b;
+--amber:#e08a44;--amber-soft:#2a1d12;--red:#e06d6d;--red-soft:#2a1414;
+--shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7)}}
+:root[data-theme="dark"]{--ground:#0b1017;--panel:#131b25;--sunk:#0e151d;--ink:#e8eef5;--ink-2:#9fadbd;
+--ink-3:#6b7a8c;--line:#232f3d;--teal:#42b8b6;--teal-soft:#0f2a2b;--amber:#e08a44;--amber-soft:#2a1d12;
+--red:#e06d6d;--red-soft:#2a1414;--shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px -14px rgba(0,0,0,.7)}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1000px;margin:0 auto;padding:52px 24px 90px}
+h1,h2,h3{font-family:"IBM Plex Serif",Georgia,serif;margin:0;text-wrap:balance}
+h1{font-size:clamp(28px,4vw,42px);font-weight:600;letter-spacing:-.018em;line-height:1.14}
+h2{font-size:22px;font-weight:600;margin:0 0 4px}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);margin:0 0 13px}
+.lede{font-size:17px;color:var(--ink-2);max-width:66ch;margin:16px 0 0}
+.lede b{color:var(--ink);font-weight:600}
+.sec{margin-top:48px}
+.sub{font-size:14.5px;color:var(--ink-3);margin:2px 0 20px;max-width:72ch}
+mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:20px 23px;margin-bottom:14px;box-shadow:var(--shadow)}
+.card.go{border-left:3px solid var(--teal)}
+.card.stop{border-left:3px solid var(--red)}
+.card.open{border-left:3px solid var(--amber)}
+.card h3{font-size:17px;margin:0 0 4px;font-weight:600}
+.card .rank{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.card p{margin:9px 0;color:var(--ink-2);font-size:14.5px}
+.card b{color:var(--ink)}
+.say{background:var(--teal-soft);border-radius:3px;padding:11px 14px;margin:12px 0 4px;font-size:14.5px;color:var(--ink)}
+.say::before{content:"SAY THIS";display:block;font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.11em;color:var(--teal);margin-bottom:5px}
+.dont{background:var(--red-soft);border-radius:3px;padding:11px 14px;margin:12px 0 4px;font-size:14.5px;color:var(--ink)}
+.dont::before{content:"NOT THIS";display:block;font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.11em;color:var(--red);margin-bottom:5px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--panel);margin:12px 0}
+table{border-collapse:collapse;width:100%;font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:500;background:var(--sunk)}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+td.win{color:var(--teal);font-weight:600}
+td.lose{color:var(--amber)}
+ol.steps{counter-reset:s;padding:0;margin:0;list-style:none}
+ol.steps li{counter-increment:s;background:var(--panel);border:1px solid var(--line);border-radius:3px;
+padding:17px 20px 17px 58px;margin-bottom:11px;position:relative;box-shadow:var(--shadow)}
+ol.steps li::before{content:counter(s);position:absolute;left:20px;top:17px;font-family:"IBM Plex Mono",monospace;
+font-size:19px;font-weight:600;color:var(--teal)}
+ol.steps b{display:block;font-size:15.5px;margin-bottom:4px}
+ol.steps p{margin:6px 0 0;color:var(--ink-2);font-size:14px}
+.cost{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);margin-top:7px}
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:5px 18px}
+</style>
+<div class="wrap">
+<p class="eyebrow">HadNet / HadDNN replication &middot; briefing</p>
+<h1>What to present, and what to be careful about</h1>
+<p class="lede">Ordered by how well each claim survives scrutiny. The first three are solid. The last two need framing, and two things you might be tempted to say would not hold up.</p>
+
+<div class="sec">
+<h2>Lead with these</h2>
+<p class="sub">Defensible without caveats, in the order I would present them.</p>
+
+<div class="card go">
+<div class="rank">Finding 01 &middot; strongest</div>
+<h3>27&times; speedup at zero cost</h3>
+<p>Their <mono>h_prod</mono> ran 180 tiny matmuls per call in Python &mdash; <b>720,000 kernel launches per fit</b>, each too small to saturate a GPU. One batched GEMM replaces each set of 180.</p>
+<div class="scroll"><table><tbody>
+<tr><td>original</td><td>2000 epochs</td><td>196.64 s</td><td>err 0.01623</td></tr>
+<tr><td>batched</td><td>2000 epochs</td><td class="win">7.27 s</td><td class="win">err 0.01623</td></tr>
+</tbody></table></div>
+<p><b>Error identical to five decimals</b> &mdash; provably the same computation (exact in float64, 1.4 ulp on GPU from cuBLAS reduction order). Nothing traded.</p>
+<div class="say">&ldquo;27&times; faster with bit-identical output. The bottleneck was never arithmetic &mdash; it was launching 720,000 kernels that each did 200k FLOPs.&rdquo;</div>
+</div>
+
+<div class="card go">
+<div class="rank">Finding 02</div>
+<h3>Initialisation drops from O(n&#8309;) to O(n&#8308;)</h3>
+<p>Their init computes <b>all 144 singular triplets and keeps 10</b> &mdash; 93% computed and discarded. Their own Eq. (11) is <mono>O(mnp&middot;min(m,n)) + O(k&middot;r&middot;mnp)</mono>; in <mono>n</mono> that is <mono>O(n&#8309;) + O(n&#8308;)</mono>.</p>
+<p><b>The init is the only term above fourth power.</b> Computing only the leading <mono>r</mono> directions costs <mono>O(mnp&middot;r)</mono>, so the whole method becomes quartic.</p>
+<div class="say">&ldquo;They compute the full spectrum and throw away 93%. Computing only what you keep drops initialisation from n&#8309; to n&#8308; &mdash; the only super-quartic term in their own complexity result.&rdquo;</div>
+</div>
+
+<div class="card go">
+<div class="rank">Finding 03</div>
+<h3>The training budget is largely wasted</h3>
+<p><mono>max_epochs=2000</mono> with <b>no early exit at all</b> &mdash; the patience counter only decays the learning rate, it never breaks. On <mono>real-world/</mono> it is 10,000.</p>
+<div class="scroll"><table>
+<thead><tr><th>dataset</th><th>budget</th><th>plateau</th><th>gain</th></tr></thead><tbody>
+<tr><td>miserables r=2</td><td>10,000</td><td class="win">100</td><td class="win">100&times;</td></tr>
+<tr><td>miserables r=10</td><td>10,000</td><td class="win">500</td><td class="win">20&times;</td></tr>
+<tr><td>miserables r=25</td><td>10,000</td><td class="win">1000</td><td class="win">10&times;</td></tr>
+<tr><td>video r=25</td><td>2,000</td><td class="win">309</td><td class="win">6.5&times;</td></tr>
+</tbody></table></div>
+<p>At rank 10 on video the rule correctly <b>does not fire</b> &mdash; the model is still underfitting. It self-scales with capacity, no per-rank tuning.</p>
+<div class="say">&ldquo;Stopping at the plateau gives 6.5&times; on video and 10&ndash;20&times; on the matrix datasets, for under 1% error. And it stops on its own when the model still has learning to do.&rdquo;</div>
+</div>
+</div>
+
+<div class="sec">
+<h2>Present with framing</h2>
+<p class="sub">True, but they will fall apart if stated flatly. The framing is the whole thing.</p>
+
+<div class="card open">
+<div class="rank">Finding 04 &middot; needs care</div>
+<h3>The comparison is at matched rank, not matched storage</h3>
+<p>HadNet at rank <mono>r</mono> keeps four factors &mdash; <mono>2r(m+n)</mono> values &mdash; against SVD's <mono>r(m+n)</mono>. <b>The paper's comparison silently gives it double the budget.</b> That asymmetry is real and undisclosed.</p>
+<p>But correcting it does <b>not</b> overturn the paper, and this is the part to get right:</p>
+<div class="scroll"><table>
+<thead><tr><th>rank 25</th><th>HadNet</th><th>SVD(2r) same storage</th><th>winner</th></tr></thead><tbody>
+<tr><td>full-rank random <span style="color:var(--ink-3)">(Tables 2/5/6)</span></td><td class="win">0.067476</td><td>0.322372</td><td class="win">HadNet, 4.8&times;</td></tr>
+<tr><td>images <span style="color:var(--ink-3)">(Tables 7/9)</span></td><td>0.12036</td><td class="lose">0.06435</td><td class="lose">SVD</td></tr>
+</tbody></table></div>
+<p><b>The spectrum decides it.</b> Images are approximately low-rank, so a truncated SVD is already near-optimal and the extra expressiveness has nothing to capture. Full-rank data has a flat spectrum where truncation is costly and the <mono>r&sup2;</mono> reach genuinely pays.</p>
+<div class="dont">&ldquo;HadNet is really just SVD at 2r&rdquo; &mdash; false on their headline data, and easy to disprove.</div>
+<div class="say">&ldquo;The comparison is at matched rank rather than matched storage, which is worth flagging. Correcting it, the method still wins on full-rank data &mdash; but loses on images and video, which are its applications sections. Their weakest case is the one they lead with.&rdquo;</div>
+</div>
+
+<div class="card open">
+<div class="rank">Finding 05 &middot; strongest scientific point</div>
+<h3>The benchmark scores against its own injected noise</h3>
+<p>The scripts add <mono>0.01&middot;randn</mono> and then measure error <b>against the noisy tensor</b>. At rank 25 on video:</p>
+<div class="scroll"><table><tbody>
+<tr><td>vs the noisy target <span style="color:var(--ink-3)">(what is reported)</span></td><td class="win">0.01621</td></tr>
+<tr><td>vs the true video</td><td class="lose">0.02361</td></tr>
+</tbody></table></div>
+<p>The reconstruction is <b>closer to the noise realisation than to the real signal</b>. At rank 10 the ordering reverses, because the model then lacks the capacity to memorise noise. So comparisons at rank 20+ partly measure noise-fitting, and <b>a method that overfits harder scores better</b>.</p>
+<p>The same three lines push <b>17.79% of an MRI below zero</b>, after which metrics are computed on clamped output.</p>
+</div>
+</div>
+
+<div class="sec">
+<h2>Do not say these</h2>
+
+<div class="card stop">
+<h3>&ldquo;HadDNN is a hardware problem, we will retest on better GPUs&rdquo;</h3>
+<p>It is not, and this one is easy to check. The OOM is real but secondary. The networks make it <b>worse</b>:</p>
+<div class="scroll"><table>
+<thead><tr><th>regime</th><th>params</th><th>time</th><th>rel err</th></tr></thead><tbody>
+<tr><td>plain factors</td><td class="win">76,800</td><td class="win">1.00 s</td><td class="win">0.03990</td></tr>
+<tr><td>frozen 98.5%, bias only</td><td>153,600</td><td>2.05 s</td><td>0.10589</td></tr>
+<tr><td>HadDNN as shipped</td><td>10,001,920</td><td>8.98 s</td><td>0.21590</td></tr>
+<tr><td>wider bottleneck (h=256)</td><td>39,743,488</td><td>28.84 s</td><td>0.45862</td></tr>
+</tbody></table></div>
+<p><b>Monotone in the wrong direction.</b> Freezing 98.5% of the parameters halves the error; widening the bottleneck doubles it. Plain factors win at <b>every</b> learning rate from 0.3 to 0.001, so it is not tuning either.</p>
+<p>The mechanism: the final layer's bias is already full-dimensional, so it alone spans the entire factor space. The network is an exact reparameterisation of something unconstrained &mdash; it cannot represent anything new, it only makes the landscape harder.</p>
+<div class="say">&ldquo;HadDNN's factor networks are provably redundant and empirically harmful. The paper's own Table 9 already shows it losing to HadNet on both time and error &mdash; we found the mechanism. Better GPUs will not change it.&rdquo;</div>
+</div>
+
+<div class="card stop">
+<h3>&ldquo;177&times; faster&rdquo; as a single number</h3>
+<p>It bundles two claims of very different quality. Split it, or the first question you get will unpick it.</p>
+<div class="say">&ldquo;27&times; is free &mdash; bit-identical output. A further 6.5&times; comes from stopping early and costs 3.1% error. Together 177&times;, but only at high rank where the stopping rule fires.&rdquo;</div>
+</div>
+</div>
+
+<div class="sec">
+<h2>Raise these as open questions</h2>
+<p class="sub">Better to surface them yourself than have them asked.</p>
+<div class="card open">
+<h3>Three that we cannot currently settle</h3>
+<p><b>Is HadNet under-trained?</b> 2000 epochs is the paper's own budget, but &ldquo;the optimiser cannot reach the good solutions&rdquo; and &ldquo;the solutions are not there&rdquo; are different claims, and nothing we ran separates them.</p>
+<p><b>Their baselines are not like-for-like.</b> AGD and IGD run <b>40,000 iterations on numba-CPU</b> against HadNet's 2,000 epochs on GPU. The reported 21&times; advantage over TAGD is close to the iteration ratio alone. This is in the released code, not something we introduced.</p>
+<p><b>The paper and the code disagree.</b> &sect;4.2 states &ldquo;a linear activation function&rdquo;; the code ships <mono>Linear &rarr; LayerNorm &rarr; ReLU</mono>. Unresolved which produced the published numbers &mdash; worth asking the authors.</p>
+</div>
+</div>
+
+<div class="sec">
+<h2>Next steps</h2>
+<p class="sub">Ordered by expected value per unit of work. The first three are cheap.</p>
+<ol class="steps">
+<li><b>Re-run the k&gt;2 and rank findings on full-rank data</b>
+<p>Both were tested on images &mdash; the regime where SVD is strongest &mdash; and both concluded &ldquo;no advantage&rdquo;. That conclusion is suspect for the same reason Finding 04 needed correcting. The <mono>r&#7503;</mono> expressiveness may well be reachable on full-rank data, which would revive the k-factor direction entirely.</p>
+<div class="cost">~1 day &middot; existing code &middot; would resolve two provisional results</div></li>
+
+<li><b>Finish the HadDNN architecture variants</b>
+<p>Four fixes were designed but never measured: linear activation (the paper's stated design), no final bias (forces genuine rank structure), and a per-slice shared decoder. The last is the only version where the network does something plain factors cannot &mdash; tie the slices together &mdash; and it is small enough to sidestep the memory wall.</p>
+<div class="cost">~2 days &middot; run on images, not video &middot; would settle whether HadDNN is salvageable</div></li>
+
+<li><b>Codec-level compression comparison</b>
+<p>Parameter count is not the only compression metric, and the paper's stated application is compression. SVD's singular values are ordered and quantise well; Hadamard factors carry no such structure. This could change Finding 04 in either direction and nobody has measured it.</p>
+<div class="cost">~3 days &middot; needs a real codec baseline (H.264/HEVC for video)</div></li>
+
+<li><b>Factor sharing along the slice dimension</b>
+<p>Every slice currently gets independent factors, so parameters scale with slice count &mdash; 1.04M parameters for a 3.7M-entry video, on data where consecutive frames are nearly identical. Sharing a basis across slices fixes the compression ratio, shrinks the gradient, and makes sampling viable. Probably the largest untapped structural win.</p>
+<div class="cost">~1 week &middot; changes the model &middot; connects to the streaming work</div></li>
+
+<li><b>Riemannian optimisation, via K-FAC</b>
+<p>The parameterisation has a scaling symmetry that makes the landscape ill-conditioned for Adam. We tried the cheap fix &mdash; explicit balancing &mdash; and it changed nothing, which <b>rules out the shortcut</b>: it needs the real metric. K-FAC is the tractable route before the full manifold formulation.</p>
+<div class="cost">2&ndash;4 weeks &middot; highest ceiling, highest cost &middot; arXiv:2606.01216</div></li>
+</ol>
+</div>
+
+<div class="sec">
+<h2>One pattern worth mentioning</h2>
+<div class="card">
+<p>Three independent, well-motivated ideas all failed for the <b>same</b> reason: gauge-fixing by balancing, Anderson acceleration, and multi-pass chunking. In each case the intervention <b>perturbs Adam near convergence</b>, and the disruption costs more than the idea gains.</p>
+<p>The third one was rescued by decaying the learning rate each pass &mdash; which turned a 68% degradation into a <b>3.6&times; improvement</b>. That is a general lesson for this problem: anything touching the parameters or the optimiser mid-run needs a decayed step size, or it fights the convergence it is meant to help.</p>
+</div>
+</div>
+
+<footer><span>RTX 4050 &middot; torch 2.11.0+cu128</span><span>paper: RTX 4500 Ada, 24 GB</span><span>full detail: docs/DECISIONS.md &sect;1&ndash;28</span></footer>
+</div>

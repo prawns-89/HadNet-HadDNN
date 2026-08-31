@@ -8,6 +8,7 @@ self-contained (images embedded as data URIs, no external assets).
 | `rank-reconstructions.html` | Original vs SVD vs HadNet vs SVD-at-matched-storage, two images × eight ranks (r=2…128), with error, PSNR and stored-value counts. Interactive |
 | `all-tables.html` | The paper's Tables 2/5/6 beside re-measured values, plus the matched-storage column the paper omits, plus before/after for all seven methods |
 | `change-ledger.html` | Every change made to the released code, with the paper's numbers alongside |
+| `presentation-brief.html` | What to present to a supervisor, what to avoid claiming, and prioritised next steps |
 
 Data behind them:
 
