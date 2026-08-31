@@ -688,3 +688,71 @@ shared across the whole sequence, and that cost grows with rank.
 sequence length and the ability to emit output before the stream ends -- things
 the joint fit cannot offer at any accuracy. It costs real error. Use it for
 long or unbounded video; not otherwise. Chunk ~20 rather than 1.
+
+---
+
+## 28. Multi-pass chunking with shifted boundaries -- WORKS, once the LR decays
+
+Chunked streaming (Sec. 27) loses structure spanning a chunk edge. But the
+edges are arbitrary: run again with the boundaries offset, continuing to
+optimise the **same** factors, and a slice that was at an edge becomes
+interior. Same model, same parameter count -- only the optimisation schedule
+changes.
+
+### First attempt: helped at rank 10, actively hurt at rank 25
+
+| passes | rank 10 | rank 25 |
+|---|---|---|
+| 1 | 0.07723 | **0.04146** |
+| 3 | 0.07404 | 0.05224 |
+| 8 | **0.07221** | 0.06970 |
+
+Rank 10 improved monotonically. Rank 25 got **68% worse** by pass 8.
+
+**Cause:** each pass created a **fresh Adam at lr=0.1** on chunks that were
+already well fit. Adam's first steps are large and the convergence check exits
+before the ground is recovered. At rank 10 the solution is coarse enough that
+re-optimising wins anyway; at rank 25 it is fine enough that the kick dominates.
+
+**Third sighting of the same failure.** Sec. 20 (balancing invalidating Adam's
+second moments, causing a spike at epoch 250), Sec. 21 (Anderson extrapolating
+every step), and now this. Three sound ideas defeated by one mechanism:
+**perturbing Adam near convergence costs more than the perturbation gains.**
+Worth treating as a property of this problem, not three separate accidents.
+
+### The fix: decay the learning rate each pass
+
+`lr = 0.1 * decay^pass`, so later passes refine instead of kicking.
+
+| rank | decay | p=1 | p=2 | p=3 | p=5 | p=8 |
+|---|---|---|---|---|---|---|
+| 10 | 1.0 | 0.07723 | 0.07493 | 0.07404 | 0.07250 | 0.07221 |
+| 10 | **0.5** | 0.07723 | 0.06936 | 0.06662 | 0.06470 | **0.06342** |
+| 10 | 0.3 | 0.07723 | 0.07075 | 0.06820 | 0.06670 | 0.06599 |
+| 25 | 1.0 | 0.04146 | 0.04772 | 0.05224 | 0.06053 | 0.06970 |
+| 25 | **0.5** | 0.04146 | 0.02779 | 0.02244 | 0.02029 | **0.01914** |
+| 25 | 0.3 | 0.04146 | 0.02398 | 0.02223 | 0.02108 | 0.02100 |
+
+**Rank 25 inverts completely: monotonically worse becomes monotonically
+better, and 0.06970 becomes 0.01914 -- 3.6x better at the same pass count.**
+
+Against the joint fit (0.01623), the gap closes from **+155% to +18%**.
+`decay=0.5` beats `0.3` at higher pass counts, so 0.5 is the choice.
+
+### Operating points at rank 25
+
+| config | time | rel err | peak MB | vs joint |
+|---|---|---|---|---|
+| joint batched | 11.25 s | 0.01623 | 157.0 | - |
+| **3 passes, decay 0.5** | **5.78 s** | 0.02244 | ~105 | **1.9x faster, 1.5x lighter, +38% err** |
+| 5 passes, decay 0.5 | 8.99 s | 0.02029 | ~105 | 1.25x faster, +25% err |
+| 8 passes, decay 0.5 | 14.75 s | 0.01914 | ~104 | slower, +18% err |
+
+So bounded-memory streaming now lands within 18-38% of a fit that has the
+entire tensor resident, instead of 155% adrift. Whether that trade is worth it
+depends on whether the sequence fits in memory at all -- for long or unbounded
+video it is the only option, and it is now a much cheaper one.
+
+**Credit:** the shifted-boundary idea came from the user, on the reasoning that
+the chunking speedup left budget to spend on multiple passes. Correct, and the
+first version failed only on the Adam-restart detail.
