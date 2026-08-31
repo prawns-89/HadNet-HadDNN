@@ -333,3 +333,80 @@ def optimal_k(R):
     """Predicted cost-optimal number of factors for target effective rank R."""
     import math
     return math.log(R)
+
+
+# --------------------------------------------------------------------------
+# Streaming decomposition along p  (RESEARCH.md Sec. 13)
+# --------------------------------------------------------------------------
+#
+# Every method here fits all p slices jointly in one batched solve, which means
+# the whole tensor must be resident. That is why HadDNN OOMs at rank 25 on a
+# 6 GB card, and it rules out actually streaming video.
+#
+# Streaming instead: take slices as they arrive, keep only the current one plus
+# the factors. Two things make this more than a memory trick:
+#
+#   1. Memory drops from O(m*n*p) to O(m*n + r(m+n)) -- independent of p, so
+#      arbitrarily long video fits.
+#   2. Consecutive frames are nearly identical, so slice i+1's factors start
+#      from slice i's. A warm start should need far fewer epochs than a cold
+#      SVD init, which is where the time saving comes from.
+
+class StreamingHadamard:
+    """Fit  X_i ~ (W1 H1) o (W2 H2)  slice by slice, warm-starting each from
+    the previous.
+
+        s = StreamingHadamard(m, n, rank, device)
+        for frame in stream:
+            recon, epochs = s.push(frame)
+
+    `warm_epochs` applies once the first slice has established factors;
+    `cold_epochs` is used only for the first.
+    """
+
+    def __init__(self, m, n, rank, device="cuda", lr=0.1,
+                 cold_epochs=500, warm_epochs=50, tol=1e-4):
+        self.m, self.n, self.r = m, n, rank
+        self.device, self.lr = device, lr
+        self.cold_epochs, self.warm_epochs, self.tol = cold_epochs, warm_epochs, tol
+        self.F = None
+        self.count = 0
+        self.total_epochs = 0
+
+    def _svd_init(self, X):
+        root = X.abs().clamp_min(1e-12).sqrt()
+        out = []
+        for M in (root, root * torch.sign(X)):
+            U, S, Vh = torch.linalg.svd(M, full_matrices=False)
+            s = S[:self.r].sqrt()
+            out += [(U[:, :self.r] * s), (s.unsqueeze(1) * Vh[:self.r, :])]
+        return out
+
+    @staticmethod
+    def _recon(F):
+        return (F[0] @ F[1]) * (F[2] @ F[3])
+
+    def push(self, X, epochs=None):
+        """Absorb one slice; returns (reconstruction, epochs_used)."""
+        warm = self.F is not None
+        F0 = [f.detach().clone() for f in self.F] if warm else self._svd_init(X)
+        F = [f.requires_grad_(True) for f in F0]
+        n_ep = epochs if epochs is not None else (self.warm_epochs if warm else self.cold_epochs)
+        opt = torch.optim.Adam(F, lr=self.lr)
+        prev, used = float("inf"), 0
+        for _ in range(n_ep):
+            loss = torch.norm(X - self._recon(F))
+            opt.zero_grad(); loss.backward(); opt.step()
+            used += 1
+            l = loss.item()
+            if abs(prev - l) < self.tol * max(abs(l), 1e-12):
+                break                      # converged for this slice
+            prev = l
+        self.F = [f.detach() for f in F]
+        self.count += 1
+        self.total_epochs += used
+        with torch.no_grad():
+            return self._recon(self.F), used
+
+    def factors(self):
+        return self.F

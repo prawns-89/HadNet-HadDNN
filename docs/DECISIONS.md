@@ -621,3 +621,70 @@ gets the opposite impression of where the method works.
 
 This also corroborates `research/rank200-remeasure` from a separate session,
 which independently found the basin behaviour to be a low-rank-image artefact.
+
+---
+
+## 27. Streaming along p (RESEARCH.md Sec. 13) -- feasibility win, needs chunking
+
+Every method here fits all `p` slices jointly, so the whole tensor must be
+resident. That is why HadDNN OOMs at rank 25 on a 6 GB card, and it rules out
+actually streaming video. `StreamingHadamard` takes slices as they arrive,
+keeping only the current slice plus the factors, warm-starting each from the
+previous.
+
+### Slice-by-slice: memory yes, speed no
+
+| rank 25 | time | rel err | peak MB | slice-epochs |
+|---|---|---|---|---|
+| joint batched (2000 ep) | **11.25 s** | **0.01623** | 157.0 | **360,000** |
+| streaming, warm=20 | 9.77 s | 0.17945 | **47.8** | **4,065** |
+| streaming, warm=100 | 42.17 s | 0.03726 | **47.8** | 17,703 |
+
+**Memory drops 3.3x and becomes independent of `p`** -- a 10,000-frame video
+would OOM the joint fit and stream fine.
+
+But note the last two columns: streaming does **100x fewer slice-epochs and
+takes the same time.** Each unit of work runs ~100x less efficiently, because
+processing slices one at a time **re-introduces exactly the kernel-launch
+problem that batching `h_prod` removed** (Sec. 4.1). Same failure mode,
+arrived at from the opposite direction -- and the same one Shard hit, giving
+back 2.5x throughput to "many small kernel launches".
+
+### Chunking recovers it
+
+Streaming in chunks keeps memory bounded while keeping the GEMM wide:
+
+| rank | chunk | time | rel err | peak MB | steps |
+|---|---|---|---|---|---|
+| 10 | 1 | 27.29 s | 0.07531 | **47.5** | 8,927 |
+| 10 | 6 | 5.55 s | 0.07687 | 51.2 | 1,691 |
+| 10 | **20** | **1.47 s** | 0.07857 | **61.0** | 437 |
+| 10 | 60 | 1.01 s | 0.07516 | 87.7 | 176 |
+| 10 | 180 | 1.51 s | 0.07214 | 153.9 | 74 |
+| 25 | 1 | 24.27 s | 0.10606 | **47.8** | 8,850 |
+| 25 | **20** | **2.60 s** | 0.04942 | **61.4** | 800 |
+| 25 | 180 | 1.83 s | 0.03207 | 157.0 | 116 |
+
+**Chunk 1 -> 20 is 18.6x faster** at rank 10, for 13.5 MB more memory. That is
+the batching efficiency coming back. Past ~20 the returns flatten while memory
+keeps climbing, so **chunk ~20 is the knee**: 1.47 s and 61 MB against the
+joint fit's 9.51 s and 136.9 MB.
+
+### The comparison against `joint` is confounded -- read it carefully
+
+The chunked runs use a **convergence check** (`tol=1e-4`, exiting at 74-800
+steps) while `joint` runs a fixed 2000 epochs. So most of the apparent speed
+advantage over `joint` is early stopping, not chunking. The clean,
+unconfounded number is the **within-family** one: chunk 1 -> 20 at 18.6x.
+
+Against the joint fit at rank 10, chunk 20 is 6.5x faster and 2.2x lighter for
+**35% worse error** (0.07857 vs 0.05838); at rank 25 it is 4.3x faster for
+**205% worse error**. Fitting chunks independently cannot exploit structure
+shared across the whole sequence, and that cost grows with rank.
+
+### Verdict
+
+**Feasibility, not optimisation.** It buys memory that does not grow with
+sequence length and the ability to emit output before the stream ends -- things
+the joint fit cannot offer at any accuracy. It costs real error. Use it for
+long or unbounded video; not otherwise. Chunk ~20 rather than 1.
