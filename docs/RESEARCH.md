@@ -1215,6 +1215,263 @@ answer is "HadDNN wins on real media".
 
 ---
 
+## 27. Encoders and attention — what is already ruled out, and what is not
+
+"Add a transformer" is three different proposals with three different verdicts.
+Separating them first, because two of them are already answered.
+
+**The algebra says the multiplicative gate is already the transformer-like
+part.** For `A (m×r), B (r×n), C (m×s), D (s×n)`:
+
+```
+(A B) ∘ (C D)  ==  (A ⊙_row C) (B ⊙_col D)
+```
+
+where `⊙_row` is the row-wise Khatri–Rao (face-splitting) product — row `i` of
+the left factor is `a_i ⊗ c_i`. Checked numerically in float64 at
+`m,n,r,s = 7,5,3,4`: **max abs diff 1.8e-15**. So HadNet is a rank-`rs`
+factorisation whose factors are constrained to be Kronecker-structured, i.e.
+elementwise gating of two linear maps *is* one linear map in the
+Kronecker-lifted feature space. That is the same algebra as a bilinear/gated
+layer or one linear-attention head. A transformer therefore adds no expressive
+mechanism the model lacks; what it would add is **content-dependent mixing
+across a sequence axis**, and that needs a sequence axis to be worth anything —
+which only `p` on video provides (`random-tensor` has no slice ordering at all).
+
+**The three proposals.**
+
+1. **Per-factor encoder (autoencoder on `W`/`H`).** Already measured and lost:
+   this is HadDNN. `RESULTS.md` finding 2 — plain factors 0.03990, bottleneck
+   `h=64` 0.21590, `h=256` 0.45862, monotone in the wrong direction, with the
+   mechanism that the final layer's bias is already full-dimensional so the
+   decoder's output space is complete before the encoder contributes anything.
+   Any new proposal in this shape is a rerun of an experiment that has both a
+   negative result and an explanation.
+2. **Sequence model over `p`, trained per-tensor.** Same class as (1) — an
+   over-parameterised reparameterisation of a single fit, inheriting finding
+   2's result plus a cost the method cannot absorb (the whole claim is 57 s
+   against TAGD's 1194 s, `DECISIONS.md` Sec. 3).
+3. **Amortised: a hypernetwork/encoder trained *across* tensors that predicts
+   factors for a new one.** Legitimate and genuinely different — but it changes
+   the problem from "fit this tensor" to "learn a prior over tensors", and the
+   paper's setting has no corpus to learn that prior from. Costed honestly it
+   is a new paper, not a change to this one.
+
+**What is actually open** is encoding the *slice index*, not the factors: Sec.
+8.4's coordinate net, i.e. Fourier features or a hash grid feeding
+`W1(p) = MLP(p)`. That removes the `×180` parameter scaling rather than
+shrinking it (Sec. 5). It is still a factor-net, so Sec. 26's caveat binds:
+initialise it from the converged linear fit, never cold-start it into finding
+2's failure.
+
+**Tied to what is measured:**
+
+- `RESULTS.md` finding 2 — rules out (1) and, by inheritance, (2).
+- `DECISIONS.md` Sec. 2 — 3.73M entries / 1.04M params = 3.6× redundancy, all
+  of it because the factors carry the full `p`. That is the quantity a
+  coordinate encoding attacks.
+- `RESULTS.md` finding 1 — the sequence axis exists only on video, and video is
+  the regime where SVD at matched storage already wins. A sequence model
+  doubles down on the method's weakest case; that has to be said out loud with
+  any result.
+
+**Composes with:** Sec. 5 and 8.4 (the coordinate net is the concrete form),
+Sec. 13 (streaming is the causal special case — see Sec. 28.4), Sec. 26
+(distillation is the required init), Sec. 19 (predictive coding along `p` is
+the codec-side version of the same redundancy).
+
+**Open question to argue about.** Is there any content-dependent mixing over
+slices that a *fixed* warm-start does not already capture? `StreamingHadamard`
+(`hadamard_ops.py:355`) propagates `t-1 → t` unconditionally; attention would
+let slice `t` pick which earlier slices to copy from, which matters exactly at
+scene cuts and occlusion — the case Sec. 13 flags as its own failure mode. So
+the honest test is not "transformer vs nothing" but **"attention over slices vs
+the t−1 warm-start"**, on a clip that actually contains a cut.
+
+**Failure mode.** Every version costs training time inside a method whose sole
+advantage over TAGD/TBCD is wall-clock. If the mixing model costs more than the
+epochs it saves, it loses even when its error is better — the same accounting
+that sank Sec. 26's factor nets.
+
+---
+
+## 28. Translations from NLP
+
+NLP is an odd donor field for a tensor decomposition — but four of these map
+onto *documented flaws* rather than onto the method, which is where the cheap
+wins are.
+
+### 28.1 Masked entries as the validation signal (MLM)  ** strongest here **
+
+**The construct.** BERT-style masking: hold out a random subset of entries, fit
+on the rest, score on the held-out set. Standard matrix-completion practice
+wearing an NLP hat.
+
+**Why it matters here.** `RESULTS.md` finding 3 is that the benchmark scores
+against the *noisy* target, so at rank 25 on video the reconstruction lands
+closer to the noise realisation (0.01621) than to the true video (0.02361) —
+"a method that overfits harder scores better". **A masked-entry score cannot be
+gamed this way**: the model never sees the held-out entries' noise, so
+memorising the training noise buys nothing on the validation set.
+
+It also repairs the adopted stopping rule. Noise-floor stopping works only
+because the scripts inject *exactly* `0.01·randn`, so `σ√N` is known — it is
+not deployable on data whose σ is unknown. A held-out-entry loss needs no σ at
+all, and generalises the 6.5× epoch cut to real data.
+
+**Tied to what is measured:** `RESULTS.md` finding 3 (the noise-fitting
+result); `DECISIONS.md` Sec. 16 (17.79% of MRI pushed below zero, metrics then
+computed on clamped output); `DECISIONS.md` Sec. 12 and the adopted
+noise-floor stop (309 vs 2000 epochs, predicted floor 19.32, realised 19.32).
+
+**Composes with:** Sec. 9.4 (discrepancy principle — this is the
+σ-free alternative to it), Sec. 2 (masking *is* partial observation, which
+`DECISIONS.md` Sec. 2 parked), Sec. 11 (validation curve picks the rung on the
+rank ladder without a held-out tensor).
+
+**Open question to argue about.** Masking breaks the batched dense solve — the
+loss becomes `‖M ∘ (X − X̂)‖` with a mask `M`, which is still one GEMM plus an
+elementwise multiply, so the cost should be near-free. Verify that before
+believing the estimate; the batched `h_prod` win (27×) came precisely from
+keeping everything dense and batched.
+
+**Failure mode.** At rank 40 on random data the fit is *exact* (finding 1,
+rel. error 0.000000). With a mask, exactness on observed entries says nothing
+about the held-out ones, and the validation curve may pick a rank far below
+what the paper reports — which is arguably the correct answer, but it would
+change the headline tables, so expect an argument about it.
+
+### 28.2 Zipf's law — the spectral exponent as a regime predictor
+
+**The construct.** NLP's oldest empirical law is that word frequencies follow a
+power law, and that the exponent tells you which methods work. Singular value
+spectra admit the same fit: `s_i ~ i^-α`.
+
+**Why it matters here.** `RESULTS.md` finding 1 currently reads "it depends
+entirely on the spectrum" — a qualitative claim with a two-family split behind
+it. A power-law exponent turns it into a **single scalar that could predict the
+winner before running anything.** Measured on the repo's own data (grayscale,
+log-log fit over the full spectrum):
+
+| dataset | α | energy in top 10% | verdict from finding 1 |
+|---|---|---|---|
+| `128cat.png` | 1.447 | 0.990 | SVD(2r) wins |
+| `128flower.png` | 1.607 | 0.983 | SVD(2r) wins |
+| `128monalisa.png` | 1.870 | 0.996 | SVD(2r) wins |
+| `128mri.png` | 2.015 | 0.978 | SVD(2r) wins |
+| video frame 0 (144×144) | 2.086 | 0.989 | (video ≈ image regime) |
+| video mean frame | 2.434 | 0.996 | (video ≈ image regime) |
+| random uniform 144×144 | **0.841** | **0.821** | **HadNet wins, 4.8× at r=25** |
+
+The exponents are measured; the **predictive claim is a hypothesis, not a
+result** — every "SVD wins" row is one data family and every "HadNet wins" row
+is the other, so this is n=2 families, not n=7 points. What it does give is a
+falsifiable statement with a stated threshold: **HadNet at matched storage
+should win when α < 1 and lose when α > 1.4.** Test by sweeping synthetic
+spectra with prescribed α between those bounds and finding where the crossover
+actually is — cheap, and it either produces a law or kills the idea in an
+afternoon.
+
+**Tied to what is measured:** `RESULTS.md` finding 1 and `DECISIONS.md` Sec. 26
+(the correction that the rank finding does *not* generalise beyond images —
+this is the mechanism that correction was missing).
+
+**Composes with:** Sec. 12, 13, 21, 23 — all four already predict the same
+image-vs-random split by different mechanisms. If α is the common cause, one
+measurement explains four predictions.
+
+**Failure mode.** A single exponent throws away spectral *shape*; a spectrum
+with a sharp knee and one with slow decay can fit the same α and behave
+differently. If the synthetic sweep shows no clean crossover, report that and
+drop it — do not rescue it with a second parameter.
+
+### 28.3 Variable rank per slice (BPE / rate allocation)
+
+**The construct.** BPE spends more of its vocabulary on frequent patterns and
+backs off to bytes for the rest; Kneser–Ney backs off from high order to low
+where counts are thin. Both are **adaptive budget allocation over a
+heterogeneous corpus**.
+
+**Mapping.** Every slice currently gets the same rank `r`. In video a static
+frame and a fast-motion frame get identical budget, which is obviously wrong —
+allocate rank per slice against a residual target instead (fit at low rank,
+promote only the slices still above threshold). Sec. 11's rank ladder already
+builds the machinery; this makes the rung *per-slice* rather than global.
+
+**Tied to what is measured:** `DECISIONS.md` Sec. 3 — cost is `O(k r m n p)`
+and linear in `r`, so cutting mean rank cuts time directly; Sec. 2's 3.6×
+redundancy figure assumes uniform allocation.
+
+**Failure mode.** Variable rank means a ragged storage format, which hurts the
+one metric the paper actually cares about unless the per-slice ranks are
+themselves cheap to code (they are: 180 small integers). It also breaks the
+batched GEMM that the 27× depends on — likely needs bucketing into a few rank
+classes, which caps the achievable saving.
+
+### 28.4 Exposure bias in the streaming fit — and scheduled sampling
+
+**The construct.** Autoregressive models trained with teacher forcing see
+ground truth at step `t-1` and their own output at inference — the mismatch
+compounds. NLP's fixes: scheduled sampling, DAgger, professor forcing.
+
+**Mapping.** `StreamingHadamard` (`hadamard_ops.py:355`) initialises slice `t`
+from slice `t-1`'s *fitted* factors and takes `warm_epochs=50`. Sec. 13 already
+names the failure — "error accumulates along the chain: slice `t` inherits
+slice `t-1`'s fit error plus its own" — **that is exposure bias**, and it has a
+literature with named remedies rather than only the "periodic keyframe re-fit"
+mitigation Sec. 13 proposes from the codec side. Scheduled sampling's version:
+with probability ε, re-init slice `t` cold (or from a shared base) instead of
+from `t-1`, annealing ε over the sweep.
+
+**Tied to what is measured:** `DECISIONS.md` Sec. 27 and Sec. 28 — streaming
+along `p` was a feasibility win that *required* chunking, and multi-pass
+chunking with shifted boundaries only worked once the LR decayed. Both are
+symptoms of drift along the chain; naming it exposure bias predicts that
+shifted boundaries help for the same reason scheduled sampling does, which is a
+testable claim about work already done.
+
+**Failure mode.** Keyframes (Sec. 13's fix) and stochastic re-init cost the
+same thing — a cold fit — so this only wins if *scheduled* re-init beats
+*periodic* re-init at equal cold-fit budget. That is a narrow target.
+
+### 28.5 Negative sampling (SGNS) — entry subsampling for the loss
+
+**The construct.** Skip-gram with negative sampling avoids the full softmax by
+sampling; Levy & Goldberg then showed SGNS *implicitly factorises a shifted PMI
+matrix* — so the link to matrix factorisation is exact, not analogical.
+
+**Mapping.** The per-epoch loss is dense over all `m·n·p` entries. Sample a
+minibatch of entries instead, making per-step cost independent of tensor size.
+This is Sec. 2's sampling idea arrived at from the objective side rather than
+the leverage-score side, and it needs none of Sec. 2's machinery.
+
+**Failure mode.** The repo minimises the **unsquared** norm (`DECISIONS.md`
+Sec. 11), whose gradient `−R/‖R‖` is not a sum over entries — a sampled
+estimate of it is biased, unlike the squared case. Either switch to the squared
+loss for the sampled variant (changing the objective the paper reports) or
+accept the bias. Resolve that before writing code.
+
+### 28.6 Shorter mentions
+
+- **LoRA as the shape for Sec. 5.** "Shared base + per-slice low-rank delta" is
+  literally LoRA, and NLP's empirical finding is that ranks as low as 4–16
+  suffice. That is a concrete parameterisation to try first rather than a
+  general "factorise along `p`": shared `W1` across all slices, per-slice rank-2
+  correction.
+- **Bits-per-entry instead of relative error.** NLP reports bits-per-byte and
+  refuses to compare models at different tokenisations. Sec. 24's gap is the
+  same discipline missing: the compression claim is never in bits, and never
+  against a real codec.
+- **Dropout on factors.** A one-line regulariser aimed straight at finding 3's
+  noise fitting. Cheap enough that it should be measured before anything in
+  this section is built.
+- **Beam search over sign patterns.** Sec. 23's discrete sign latent currently
+  reaches for graph cuts and SDP relaxations; beam search over per-row sign
+  flips is the cheap approximate decoder NLP would use, and sidesteps Sec. 23's
+  submodularity problem entirely.
+
+---
+
 ## Suggested order (revised — supersedes the list below)
 
 1. **GPU end-to-end baseline** — nothing can be claimed without it (Sec. 10, row 1).
@@ -1229,6 +1486,12 @@ answer is "HadDNN wins on real media".
 6. Then the original order: Riemannian (Sec. 1, as K-FAC per Sec. 8.3),
    factor sharing (Sec. 5, as coordinate-net per Sec. 8.4), k>2 factors
    (Sec. 3), leverage sampling (Sec. 2).
+
+**Cheaper than any of the above, added later:** Sec. 28.1 (masked-entry
+validation) and Sec. 28.2 (spectral exponent sweep) attack `RESULTS.md`
+findings 3 and 1 directly, need no new optimiser, and are each an afternoon.
+Sec. 28.6's factor dropout is one line. Do these before item 1 if the goal is
+to strengthen the findings rather than the speed.
 
 ---
 
