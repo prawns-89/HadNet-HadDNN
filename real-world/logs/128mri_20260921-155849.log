@@ -1,0 +1,13 @@
+Data: ../application-images/128mri.png  shape (256, 256)  ||X||_F = 94.167268  PSNR peak = 1
+Settings: {'momentum': 'heavy', 'beta': 0.9, 'precondition': True, 'break_symmetry': 0.01, 'init': 'svd', 'seed': 0, 'maxiter': 10000, 'time_limit': 200.0, 'psnr_peak': 1.0}
+
+storage = numbers stored / entries in X (2r(m+n)/mn); above 100% it is not compression
+PSNR is shown as 'exact' when the relative error is below 1e-10
+
+ rank  storage    rel.err     PSNR     SVD r     PSNR    SVD 2r     PSNR   time(s)   iters
+    5     7.8%   0.241971    21.12  0.381961    17.13  0.277243    19.99     20.39    9342
+   10    15.6%   0.120754    27.20  0.277243    19.99  0.175487    24.02     20.04    9344
+   20    31.2%   0.047286    35.41  0.175487    24.02  0.085877    30.31     25.66    9344
+   30    46.9%   0.022308    42.01  0.118617    27.45  0.049082    35.23     29.57    9344
+
+Saved logs/128mri_20260921-155849.log, .csv, .json and images in logs/128mri_20260921-155849_recon/

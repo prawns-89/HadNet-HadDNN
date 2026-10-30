@@ -1,0 +1,12 @@
+Data: miserables  shape (77, 77)  ||X||_F = 22.538855
+Settings: {'momentum': 'heavy', 'beta': 0.9, 'precondition': True, 'break_symmetry': 0.01, 'init': 'svd', 'seed': 0, 'maxiter': 10000, 'time_limit': 200.0}
+
+ rank    rel.err     SVD r    SVD 2r   time(s)   iters
+    2   0.630491  0.747163  0.626285      6.18    2467
+    5   0.306575  0.581052  0.447075     12.51    9342
+   10   0.020429  0.447075  0.294856     14.79    9343
+   25   0.000495  0.250210  0.084933     23.19    9347
+   40   0.000113  0.160908  0.000000     32.29    9344
+   50   0.000032  0.084933  0.000000     38.52    9346
+
+Saved logs/miserables_20260921-154400.log, .csv, .json
