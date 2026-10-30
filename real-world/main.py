@@ -34,6 +34,9 @@ def load_dataset(dataset_name, m=100, n=100, h=35):
     
     elif dataset_name == "miserables":
         G = nx.read_gml('datasets/lesmis.gml')
+        # Note: lesmis.gml stores edge weights under 'value'. to_numpy_array reads
+        # 'weight' by default, so this gives the 0/1 adjacency. For the
+        # co-occurrence counts, use nx.to_numpy_array(G, weight='value').
         D = nx.to_numpy_array(G)
 
     else:
@@ -152,12 +155,17 @@ if __name__ == "__main__":
             # recon_pil.save(f'HadNet.png')
 
             # HadamardDNN
-            train_time, (W1_dnn, H1_dnn, W2_dnn, H2_dnn) = train_DNN(D, r)
-            D_dnn = (W1_dnn @ H1_dnn) * (W2_dnn @ H2_dnn)
-            dnn_error = np.linalg.norm(D - D_dnn, 'fro')
-            print(f"\nReconstruction error HadamardDNN: {dnn_error:.6f}")
-            print(f"Relative error HadamardDNN: {dnn_error / norm_D:.6f}")
-            print(f"HadamardDNN time:  {train_time:.5f} seconds")
+            # train_DNN currently fails (HadamardDNN.__init__ uses self.p, which is
+            # never set); catch it so the other methods still run for every rank.
+            try:
+                train_time, (W1_dnn, H1_dnn, W2_dnn, H2_dnn) = train_DNN(D, r)
+                D_dnn = (W1_dnn @ H1_dnn) * (W2_dnn @ H2_dnn)
+                dnn_error = np.linalg.norm(D - D_dnn, 'fro')
+                print(f"\nReconstruction error HadamardDNN: {dnn_error:.6f}")
+                print(f"Relative error HadamardDNN: {dnn_error / norm_D:.6f}")
+                print(f"HadamardDNN time:  {train_time:.5f} seconds")
+            except AttributeError as e:
+                print(f"\nHadamardDNN skipped: {e}")
             print("\n")
             # recon_img = np.clip(D_dnn * 255, 0, 255).astype(np.uint8)
             # recon_pil = Image.fromarray(recon_img)
@@ -165,4 +173,3 @@ if __name__ == "__main__":
 
     print("True Frobenius Norm: ", norm_tensor)
     print("\n")
-
