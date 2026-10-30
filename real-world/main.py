@@ -5,6 +5,7 @@ from Hadamard_matrix import train_Net, train_DNN, qr_decomp, igd
 from PIL import Image
 from Hadamard_BCD import Hadamard_BCD
 from alternating_gradient_descent import scaled_alternating_gradient_descent_hadDec as sAGD
+from stiefel_hadamard import stiefel_hadDec
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -116,6 +117,15 @@ if __name__ == "__main__":
             # recon_img = np.clip(D_HBCD * 255, 0, 255).astype(np.uint8)
             # recon_pil = Image.fromarray(recon_img)
             # recon_pil.save(f'HBCD.png')
+
+            # Benchmark Stiefel (orthonormality kept on every step, heavy-ball momentum)
+            start = time.time()
+            W1_st, H1_st, W2_st, H2_st, _, _ = stiefel_hadDec(D, r)
+            D_st = (W1_st @ H1_st) * (W2_st @ H2_st)
+            st_error = np.linalg.norm(D - D_st, 'fro')
+            print(f"\nReconstruction error Stiefel: {st_error:.6f}")
+            print(f"Relative error Stiefel: {st_error / norm_D:.6f}")
+            print(f"Stiefel time: {time.time() - start:.5f} seconds")
 
             # Benchmark IGD
             start = time.time()
