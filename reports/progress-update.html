@@ -1,0 +1,509 @@
+<title>HadNet Replication Status</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,600;1,6..72,400&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --paper:      #F1F4F7;
+    --surface:    #FFFFFF;
+    --ink:        #14202B;
+    --ink-soft:   #4E5F6D;
+    --ink-faint:  #8496A3;
+    --rule:       #D3DDE4;
+    --rule-soft:  #E4EBF0;
+    --accent:     #1B6B77;
+    --accent-dim: #E2EEEF;
+    --flag:       #A2542A;
+    --flag-dim:   #F6EAE1;
+    --good:       #2C7256;
+    --warn:       #A9432A;
+    --shadow:     0 1px 2px rgba(20,32,43,.06), 0 8px 24px rgba(20,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0F171E;
+      --surface:    #16212B;
+      --ink:        #E2EAEF;
+      --ink-soft:   #A2B3BF;
+      --ink-faint:  #6D7F8C;
+      --rule:       #2A3945;
+      --rule-soft:  #212E39;
+      --accent:     #63B9C4;
+      --accent-dim: #17323700;
+      --flag:       #D9976A;
+      --flag-dim:   #2A1D14;
+      --good:       #61B58E;
+      --warn:       #DE8163;
+      --shadow:     0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #0F171E;
+    --surface:    #16212B;
+    --ink:        #E2EAEF;
+    --ink-soft:   #A2B3BF;
+    --ink-faint:  #6D7F8C;
+    --rule:       #2A3945;
+    --rule-soft:  #212E39;
+    --accent:     #63B9C4;
+    --accent-dim: #173237;
+    --flag:       #D9976A;
+    --flag-dim:   #2A1D14;
+    --good:       #61B58E;
+    --warn:       #DE8163;
+    --shadow:     0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --accent-dim: #173237; }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Source Sans 3", system-ui, -apple-system, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead { border-bottom: 2px solid var(--ink); padding-bottom: 20px; }
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: Newsreader, Georgia, serif;
+    font-weight: 600; font-size: clamp(31px, 5vw, 44px);
+    line-height: 1.12; letter-spacing: -.012em;
+    margin: 0 0 10px; text-wrap: balance; max-width: 20ch;
+  }
+  .standfirst {
+    font-family: Newsreader, Georgia, serif;
+    font-size: 19px; line-height: 1.5; color: var(--ink-soft);
+    margin: 0; max-width: 62ch;
+  }
+  .byline {
+    display: flex; flex-wrap: wrap; gap: 6px 26px;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px; color: var(--ink-faint);
+    margin-top: 22px;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---------- status strip ---------- */
+  .strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px; background: var(--rule);
+    border: 1px solid var(--rule); margin: 34px 0 8px;
+  }
+  .stat { background: var(--surface); padding: 17px 19px 15px; }
+  .stat .lbl {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 7px;
+  }
+  .stat .val {
+    font-family: Newsreader, Georgia, serif; font-size: 27px;
+    line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+  .stat .val.t-accent { color: var(--accent); }
+  .stat .val.t-flag   { color: var(--flag); }
+  .stat .sub { font-size: 13px; color: var(--ink-soft); margin-top: 5px; line-height: 1.4; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 52px; }
+  .shead { display: flex; gap: 16px; align-items: baseline; border-bottom: 1px solid var(--rule); padding-bottom: 9px; margin-bottom: 22px; }
+  .snum {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12px; color: var(--accent); font-weight: 600;
+    flex: 0 0 auto; padding-top: 3px;
+  }
+  h2 {
+    font-family: Newsreader, Georgia, serif; font-weight: 600;
+    font-size: 25px; line-height: 1.2; letter-spacing: -.008em;
+    margin: 0; text-wrap: balance;
+  }
+  h3 {
+    font-family: "Source Sans 3", sans-serif; font-weight: 600;
+    font-size: 15px; letter-spacing: .01em;
+    margin: 30px 0 9px; color: var(--ink);
+  }
+  p { margin: 0 0 14px; max-width: 68ch; }
+  .lead-in { color: var(--ink-soft); }
+  ul { margin: 0 0 14px; padding-left: 20px; max-width: 68ch; }
+  li { margin-bottom: 7px; }
+  strong { font-weight: 600; }
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: .87em; background: var(--rule-soft);
+    padding: 1px 5px; border-radius: 2px;
+  }
+
+  /* ---------- tables ---------- */
+  .scroll { overflow-x: auto; margin: 0 0 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 480px; }
+  caption {
+    text-align: left; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-faint); padding-bottom: 9px;
+  }
+  th {
+    text-align: left; font-weight: 600; font-size: 11.5px;
+    letter-spacing: .07em; text-transform: uppercase; color: var(--ink-faint);
+    border-bottom: 1px solid var(--ink); padding: 0 14px 7px 0; white-space: nowrap;
+  }
+  td {
+    padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top; font-variant-numeric: tabular-nums;
+  }
+  td.num, th.num { text-align: right; padding-right: 18px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13.5px; }
+  tr.hi td { background: var(--accent-dim); font-weight: 600; }
+  .win { color: var(--good); font-weight: 600; }
+  .lose { color: var(--warn); font-weight: 600; }
+
+  /* ---------- verdict chips ---------- */
+  .chip {
+    display: inline-block; font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+    padding: 2.5px 8px; border: 1px solid currentColor; border-radius: 2px;
+    vertical-align: 2px; white-space: nowrap;
+  }
+  .chip.solid  { color: var(--good); }
+  .chip.frame  { color: var(--flag); }
+  .chip.avoid  { color: var(--warn); }
+
+  .finding { border-left: 2px solid var(--rule); padding-left: 20px; margin-bottom: 30px; }
+  .finding h3 { margin-top: 0; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+
+  /* ---------- ladder figure ---------- */
+  figure { margin: 24px 0 22px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-size: 13.5px; color: var(--ink-soft); margin-top: 10px; max-width: 68ch; }
+
+  /* ---------- decision block ---------- */
+  .decision {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-top: 3px solid var(--flag); box-shadow: var(--shadow);
+    padding: 26px 28px; margin: 26px 0;
+  }
+  .decision h3:first-child { margin-top: 0; }
+  .opts { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); margin: 18px 0 0; }
+  .opt { background: var(--surface); padding: 16px 18px; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+  .opt .oid {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+    font-weight: 600; color: var(--flag); grid-row: span 2; padding-top: 2px;
+  }
+  .opt .oname { font-weight: 600; font-size: 15.5px; }
+  .opt .obody { font-size: 14px; color: var(--ink-soft); line-height: 1.5; }
+  .opt.pick { background: var(--flag-dim); }
+
+  .callout {
+    border: 1px solid var(--rule); border-left: 2px solid var(--accent);
+    background: var(--surface); padding: 16px 20px; margin: 20px 0;
+    font-size: 15px;
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .ctag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--accent);
+    display: block; margin-bottom: 7px;
+  }
+
+  footer {
+    margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--rule);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11.5px; color: var(--ink-faint); line-height: 1.7;
+  }
+
+  @media (max-width: 640px) {
+    .sheet { padding: 36px 20px 72px; }
+    .shead { gap: 11px; }
+    .opt { grid-template-columns: 1fr; }
+    .opt .oid { grid-row: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="sheet">
+
+  <header class="masthead">
+    <p class="kicker">Progress memo &middot; Supervisor review</p>
+    <h1>HadNet Replication Status</h1>
+    <p class="standfirst">Independent replication of Panchal, Sahoo &amp; Behera (<i>Neurocomputing</i> 699, 2026). Seventeen changes tested against the released code, three findings that contradict the paper, and one hardware decision that now gates the next stage.</p>
+    <div class="byline">
+      <span><b>Prepared</b> 7 Sep 2026</span>
+      <span><b>Hardware</b> RTX 4050 Laptop, 6 GB</span>
+      <span><b>Reference</b> RTX 4500 Ada, 24 GB</span>
+    </div>
+  </header>
+
+  <div class="strip">
+    <div class="stat">
+      <div class="lbl">Composed speedup</div>
+      <div class="val t-accent">176&times;</div>
+      <div class="sub">Video, rank 25. Of which <b>27&times; is free</b> &mdash; error identical to five decimals.</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Init complexity</div>
+      <div class="val t-accent">O(n⁵)&rarr;O(n⁴)</div>
+      <div class="sub">Removes the only super-quartic term in the paper's Eq. (11).</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Changes tested</div>
+      <div class="val">17</div>
+      <div class="sub">2 adopted, 8 rejected with measurements, 3 contradict published claims.</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Disk free</div>
+      <div class="val t-flag">2.0 GB</div>
+      <div class="sub">98% of a single 96 GB partition. Now the binding constraint.</div>
+    </div>
+  </div>
+
+  <!-- ============ 1 ============ -->
+  <section>
+    <div class="shead"><span class="snum">1</span><h2>What is established</h2></div>
+
+    <p class="lead-in">Three changes are adopted into the working fork. Each was measured end-to-end, not estimated.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>Adopted changes</caption>
+        <thead>
+          <tr><th>Change</th><th>What the released code did</th><th class="num">Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Batched Hadamard product</strong></td>
+            <td>One tiny matmul per slice in a Python loop &mdash; 180 slices &times; 2 calls &times; 2000 epochs = <strong>720,000 kernel launches</strong> per fit.</td>
+            <td class="num"><span class="win">27&times;</span><br><span style="font-size:12px;color:var(--ink-faint)">41.5&times; on kernel</span></td>
+          </tr>
+          <tr>
+            <td><strong>Randomized truncated SVD init</strong></td>
+            <td>Economy SVD computed all 144 singular triplets, then kept 10. <strong>93% discarded.</strong></td>
+            <td class="num"><span class="win">4.3&times;</span><br><span style="font-size:12px;color:var(--ink-faint)">on init</span></td>
+          </tr>
+          <tr>
+            <td><strong>Noise-floor stopping</strong></td>
+            <td><code>max_epochs=2000</code> with no early exit; the patience counter only decayed the learning rate, never broke.</td>
+            <td class="num"><span class="win">6.5&times;</span><br><span style="font-size:12px;color:var(--ink-faint)">+3.1% error</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The stopping criterion is worth mentioning to the professor directly: because the benchmark scripts inject exactly <code>0.01&middot;randn</code>, the residual floor <span class="mono">&sigma;&radic;N</span> is known in closed form. Predicted <strong>19.32</strong>; realised <strong>19.32</strong>. The run reaches it at 309 epochs and then spends the remaining 1,691 fitting noise.</p>
+
+    <h3>Two correctness defects in the released code</h3>
+    <ul>
+      <li><strong>No GPU synchronisation anywhere.</strong> <code>torch.cuda.synchronize()</code> does not appear in the repository, and the timers close before the <code>.item()</code> that would force a sync. The published GPU timings measure kernel <em>enqueue</em>, not execution. Added at 35 sites.</li>
+      <li><strong>Hardcoded <code>device='cuda'</code></strong> in a default argument crashed <code>HadamardDNN_train</code> on CPU-only builds &mdash; the repository could not be run at all without a GPU.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 2 ============ -->
+  <section>
+    <div class="shead"><span class="snum">2</span><h2>Three findings that contradict the paper</h2></div>
+    <p class="lead-in">Ordered by how well each survives scrutiny. The chips indicate how each should be presented.</p>
+
+    <div class="finding">
+      <h3>The advantage depends entirely on the spectrum <span class="chip frame">Needs framing</span></h3>
+      <p>On full-rank random data the Hadamard product genuinely pays &mdash; at rank 25 it reaches 0.067 against truncated SVD's 0.612, and at rank 40 it is exact. On <em>images</em> the ordering reverses completely, because natural and medical images already have fast-decaying spectra:</p>
+      <div class="scroll">
+        <table>
+          <caption>128mri.png &mdash; relative error at matched storage</caption>
+          <thead><tr><th class="num">Rank</th><th class="num">SVD(r)</th><th class="num">HadNet(r)</th><th class="num">SVD(2r), same storage</th></tr></thead>
+          <tbody>
+            <tr><td class="num">25</td><td class="num">0.14382</td><td class="num">0.12036</td><td class="num"><span class="win">0.06435</span></td></tr>
+            <tr><td class="num">128</td><td class="num">0.01022</td><td class="num">0.00507</td><td class="num"><span class="win">0.00003</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Framing:</strong> this does <em>not</em> overturn the paper on its own terms. It says the image and video applications in Tables 7 and 9 are the method's <em>weakest</em> case, not its strongest &mdash; the opposite of the impression those tables give. The honest claim is about where the method should be aimed, not whether it works.</p>
+    </div>
+
+    <div class="finding">
+      <h3>HadDNN's factor networks are actively harmful <span class="chip solid">Defensible</span></h3>
+      <p>Each network maps a factor to itself through a 64-unit bottleneck &mdash; but the final layer's bias is already full-dimensional, so it alone spans the whole factor space. The 332M upstream weights add a 64-dimensional correction to something already complete.</p>
+      <div class="scroll">
+        <table>
+          <caption>Image 256&times;256, rank 25, 1500 epochs</caption>
+          <thead><tr><th>Regime</th><th class="num">Trainable</th><th class="num">Time</th><th class="num">Rel. error</th></tr></thead>
+          <tbody>
+            <tr class="hi"><td>Plain factors (= HadNet)</td><td class="num">76,800</td><td class="num">1.00 s</td><td class="num">0.03990</td></tr>
+            <tr><td>FactorNet, 98.5% frozen</td><td class="num">153,600</td><td class="num">2.05 s</td><td class="num">0.10589</td></tr>
+            <tr><td>FactorNet h=64 (= HadDNN)</td><td class="num">10,001,920</td><td class="num">8.98 s</td><td class="num"><span class="lose">0.21590</span></td></tr>
+            <tr><td>FactorNet h=256</td><td class="num">39,743,488</td><td class="num">28.84 s</td><td class="num"><span class="lose">0.45862</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Monotone in the wrong direction.</strong> Freezing 98.5% of the parameters halves the error; widening the bottleneck doubles it again. Plain factors win at every learning rate from 0.3 to 0.001, with 130&times; fewer parameters. This rules out "the network just needs to be bigger."</p>
+    </div>
+
+    <div class="finding">
+      <h3>The benchmark rewards fitting its own injected noise <span class="chip frame">Needs framing</span></h3>
+      <p>The scripts add <code>0.01&middot;randn</code> and then score relative error <em>against the noisy tensor</em>. At rank 25 on video:</p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Measured against</th><th class="num">Rel. error</th></tr></thead>
+          <tbody>
+            <tr class="hi"><td>the noisy target &mdash; what the paper reports</td><td class="num">0.01621</td></tr>
+            <tr><td>the true video</td><td class="num">0.02361</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>The reconstruction is closer to the noise realisation than to the real signal. Every comparison at rank 20 and above partly measures noise-fitting, and a method that overfits harder scores better. At rank 10 the ordering reverses, because the model then lacks the capacity to memorise the noise.</p>
+    </div>
+
+    <div class="callout">
+      <span class="ctag">Do not claim</span>
+      <p>Two statements would not survive questioning. <strong>"HadDNN is a hardware problem"</strong> &mdash; it is not; plain factors beat it at every learning rate with 130&times; fewer parameters. And <strong>quoting 176&times; as a single number</strong> &mdash; 27&times; is free, the remainder costs 3.1% clean error. Quote them separately or the whole figure invites doubt.</p>
+    </div>
+  </section>
+
+  <!-- ============ 3 ============ -->
+  <section>
+    <div class="shead"><span class="snum">3</span><h2>The 35&ndash;50 dB target has a ceiling at 40</h2></div>
+
+    <p class="lead-in">This is new analysis and it should be settled with the professor before three months go into it.</p>
+
+    <p>Tracing the metric through <code>main_video.py</code>: PSNR is computed against <code>frames</code> &mdash; the <strong>clean</strong> frames captured before noise is added &mdash; while relative error is computed against <code>A</code>, the <strong>noisy</strong> tensor. The two columns in the same table score against different ground truths.</p>
+
+    <p>The injected noise is <code>0.01&middot;randn</code> on data scaled to [0,1], i.e. &sigma; = 2.55 in 8-bit units. A method that fits <code>A</code> <em>perfectly</em> reproduces that noise exactly and scores</p>
+
+    <p style="font-family:'IBM Plex Mono',monospace;font-size:15px;text-align:center;color:var(--accent);margin:20px 0;">PSNR = 20&thinsp;&middot;&thinsp;log₁₀(255 / 2.55) = 40.0 dB</p>
+
+    <figure>
+      <svg viewBox="0 0 720 158" role="img" aria-label="PSNR scale from 20 to 60 decibels showing the 35 to 50 decibel target band split at the 40 decibel noise ceiling">
+        <!-- target band -->
+        <rect x="285" y="34" width="75" height="46" fill="var(--accent-dim)" stroke="var(--accent)" stroke-width="1"></rect>
+        <rect x="360" y="34" width="150" height="46" fill="var(--flag-dim)" stroke="var(--flag)" stroke-width="1"></rect>
+        <text x="322" y="53" text-anchor="middle" font-family="'Source Sans 3',sans-serif" font-size="11" font-weight="600" fill="var(--accent)">Approximation</text>
+        <text x="322" y="68" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="10" fill="var(--ink-soft)">raise rank</text>
+        <text x="435" y="53" text-anchor="middle" font-family="'Source Sans 3',sans-serif" font-size="11" font-weight="600" fill="var(--flag)">Denoising</text>
+        <text x="435" y="68" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="10" fill="var(--ink-soft)">must not fit A</text>
+
+        <!-- axis -->
+        <line x1="60" y1="100" x2="680" y2="100" stroke="var(--ink)" stroke-width="1.5"></line>
+        <g font-family="'IBM Plex Mono',monospace" font-size="10.5" fill="var(--ink-faint)">
+          <line x1="60"  y1="100" x2="60"  y2="106" stroke="var(--ink-faint)" stroke-width="1"></line>
+          <text x="60"  y="121" text-anchor="middle" fill="var(--ink-faint)">20</text>
+          <line x1="210" y1="100" x2="210" y2="106" stroke="var(--ink-faint)" stroke-width="1"></line>
+          <text x="210" y="121" text-anchor="middle" fill="var(--ink-faint)">30</text>
+          <line x1="360" y1="100" x2="360" y2="106" stroke="var(--ink-faint)" stroke-width="1"></line>
+          <text x="360" y="121" text-anchor="middle" fill="var(--ink-faint)">40</text>
+          <line x1="510" y1="100" x2="510" y2="106" stroke="var(--ink-faint)" stroke-width="1"></line>
+          <text x="510" y="121" text-anchor="middle" fill="var(--ink-faint)">50</text>
+          <line x1="660" y1="100" x2="660" y2="106" stroke="var(--ink-faint)" stroke-width="1"></line>
+          <text x="660" y="121" text-anchor="middle" fill="var(--ink-faint)">60</text>
+        </g>
+        <text x="60" y="143" font-family="'IBM Plex Mono',monospace" font-size="10" letter-spacing="1" fill="var(--ink-faint)">PSNR vs. CLEAN FRAMES (dB)</text>
+
+        <!-- paper marker -->
+        <line x1="249" y1="80" x2="249" y2="100" stroke="var(--ink-soft)" stroke-width="1.5"></line>
+        <circle cx="249" cy="100" r="3.5" fill="var(--ink-soft)"></circle>
+        <text x="243" y="28" text-anchor="end" font-family="'Source Sans 3',sans-serif" font-size="11.5" font-weight="600" fill="var(--ink)">32.60</text>
+        <text x="243" y="15" text-anchor="end" font-family="'IBM Plex Mono',monospace" font-size="9.5" fill="var(--ink-faint)">PAPER, RANK 10</text>
+        <line x1="249" y1="34" x2="249" y2="20" stroke="var(--ink-soft)" stroke-width="1" stroke-dasharray="2 2"></line>
+
+        <!-- 40 dB ceiling -->
+        <line x1="360" y1="20" x2="360" y2="100" stroke="var(--flag)" stroke-width="2"></line>
+        <circle cx="360" cy="100" r="4" fill="var(--flag)"></circle>
+        <text x="368" y="15" font-family="'IBM Plex Mono',monospace" font-size="9.5" fill="var(--flag)">NOISE CEILING</text>
+        <text x="368" y="28" font-family="'Source Sans 3',sans-serif" font-size="11.5" font-weight="600" fill="var(--flag)">40.0 dB</text>
+
+        <!-- uint8 floor -->
+        <line x1="643" y1="88" x2="643" y2="100" stroke="var(--ink-faint)" stroke-width="1" stroke-dasharray="3 2"></line>
+        <text x="637" y="84" text-anchor="end" font-family="'IBM Plex Mono',monospace" font-size="9.5" fill="var(--ink-faint)">58.9 uint8 floor</text>
+      </svg>
+      <figcaption>The target range straddles the noise ceiling. Below 40 dB the task is approximation and more rank helps; above it, the only way up is to stop fitting the corrupted target &mdash; a denoising problem, and a different result.</figcaption>
+    </figure>
+
+    <h3>The consequence for the current workplan</h3>
+    <p>Past the noise floor, <strong>better optimisation lowers PSNR.</strong> Every convergence win &mdash; the 6.5&times; epoch cut, the multi-pass chunking schedule &mdash; fits <code>A</code> more completely, which at rank 20 and above means fitting more noise. The speed programme and the dB target are on orthogonal axes, and at high rank they are in tension. There is therefore a PSNR maximum at intermediate rank, and it has not yet been plotted.</p>
+
+    <div class="callout">
+      <span class="ctag">Worth agreeing before committing</span>
+      <p>Above 40 dB this stops being a decomposition result and becomes a denoising one. That is a legitimate and arguably more interesting claim &mdash; <em>"the Hadamard structure rejects noise better than truncated SVD at matched storage"</em> &mdash; but it is a different paper from the one the speedup work is building toward. Which of the two is the target should be an explicit decision, not a default.</p>
+    </div>
+  </section>
+
+  <!-- ============ 4 ============ -->
+  <section>
+    <div class="shead"><span class="snum">4</span><h2>Compute and storage: what is actually blocked</h2></div>
+
+    <p class="lead-in">The GPU itself is working. The constraints are disk headroom and VRAM, and they block different things.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>Current environment</caption>
+        <thead><tr><th>Resource</th><th class="num">State</th><th>Consequence</th></tr></thead>
+        <tbody>
+          <tr><td>GPU</td><td class="num">RTX 4050, 6.0 GB</td><td>Working. <code>torch 2.11.0+cu128</code>, CUDA available.</td></tr>
+          <tr><td>Reference GPU in paper</td><td class="num">RTX 4500 Ada, 24 GB</td><td>4&times; the VRAM &mdash; only ratios transfer, not absolute times.</td></tr>
+          <tr class="hi"><td>Disk</td><td class="num">2.0 GB free / 96 GB</td><td>98% full, single partition. The venv alone is 7.3 GB.</td></tr>
+          <tr><td>CUDA reinstall cost</td><td class="num">~8 GB peak</td><td>Three attempts failed with <code>Errno 28</code>, the last starting from 7.1 GB free.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The measurement gap this has already caused</h3>
+    <p>At rank 25 on video, HadDNN needs <strong>4 GB before activations</strong> and out-of-memories on the 6 GB card. That is why <strong>HadDNN has no rank-25 row</strong> in the replication sweep &mdash; a hole in the results table caused purely by hardware, not by the method. Chunked streaming was developed partly as a workaround for the same limit rather than as a designed contribution.</p>
+
+    <div class="decision">
+      <h3>The resource request</h3>
+      <p>One clarification first, because it changes what to ask for: <strong>cloud object storage does not fix either constraint.</strong> The environment must live on a local filesystem, and VRAM is not storage. The useful asks are local disk headroom, or a GPU instance where disk and VRAM come together.</p>
+
+      <div class="opts">
+        <div class="opt">
+          <div class="oid">A</div>
+          <div class="oname">Reclaim local disk &mdash; free, today</div>
+          <div class="obody">Roughly 9.3 GB is recoverable now: <code>~/.cache</code> 6.3 GB, trash 1.6 GB, apt cache 1.4 GB. Restores working headroom and unblocks environment rebuilds. Does nothing for VRAM, and the space refills.</div>
+        </div>
+        <div class="opt">
+          <div class="oid">B</div>
+          <div class="oname">External SSD for the environment</div>
+          <div class="obody">A durable fix for the disk half at trivial cost. Still leaves every rank-25 HadDNN run out of reach.</div>
+        </div>
+        <div class="opt pick">
+          <div class="oid">C</div>
+          <div class="oname">On-demand cloud GPU, &ge;24 GB VRAM &mdash; recommended</div>
+          <div class="obody">Fixes both constraints at once and matches the paper's hardware. Individual fits take <strong>seconds to minutes</strong> (5.78 s chunked, 11.25 s joint, 57 s for the paper's reference run), so this is an hourly instance for a few days of sweeps, not a standing reservation. An L4 or A10 class card with 100 GB disk is sufficient; an A100 is not required.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>What the extra VRAM specifically buys</h3>
+    <ul>
+      <li><strong>Closes the HadDNN rank-25 gap</strong> &mdash; the one missing cell in the replication table.</li>
+      <li><strong>Hardware parity with the paper</strong>, turning "ratios transfer" into a direct absolute comparison.</li>
+      <li><strong>Rank sweeps past 25</strong>, needed to locate the PSNR maximum described in §3.</li>
+      <li><strong>Makes chunking a choice, not a necessity</strong> &mdash; which makes the streaming result a cleaner contribution rather than a workaround.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 5 ============ -->
+  <section>
+    <div class="shead"><span class="snum">5</span><h2>Open questions to raise unprompted</h2></div>
+    <ul>
+      <li><strong>The paper and its code disagree.</strong> §4.2 states a linear activation function; the released code ships <code>Linear &rarr; LayerNorm &rarr; ReLU</code>. Which produced the published numbers is unresolved, and it affects every HadDNN comparison.</li>
+      <li><strong>The baselines are not like-for-like.</strong> The released AGD and IGD run 40,000 iterations on numba-CPU against HadNet's 2,000 epochs on GPU. The reported 21&times; advantage over TAGD is close to the iteration ratio alone.</li>
+      <li><strong>Under-training versus absence.</strong> "The optimiser cannot reach the good solutions" and "the good solutions are not there" are different claims, and the fixed 2000-epoch budget does not separate them.</li>
+      <li><strong>Which target &mdash; speed or fidelity.</strong> Per §3, the two are in tension above 40 dB. Worth resolving now rather than at the write-up.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Sources: RESULTS.md &middot; docs/DECISIONS.md (28 sections) &middot; docs/RESEARCH.md (26 pathways) &middot; docs/GPU.md<br>
+    Note: docs/GPU.md predates the successful CUDA install and still records a CPU-only build. Superseded by §4 above.
+  </footer>
+
+</div>
