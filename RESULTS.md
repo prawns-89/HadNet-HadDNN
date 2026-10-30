@@ -12,6 +12,7 @@ RTX 4500 Ada (24 GB), so absolute times differ — **ratios are what transfer.**
 
 Full detail and every rejected experiment: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 Research directions: [`docs/RESEARCH.md`](docs/RESEARCH.md).
+Formal statements, proofs and the dimension results: [`docs/THEORY.md`](docs/THEORY.md).
 
 ---
 
@@ -113,6 +114,31 @@ is costly and the Hadamard product's `r²` reach genuinely pays.
 
 **So the paper's image and video applications (Tables 7, 9) are its *weakest*
 case, not its strongest** — the opposite of the impression Table 9 gives.
+
+**SUPERSEDED — the mechanism above is wrong, and the image result is partly an
+initialisation bug.** Two later findings:
+
+1. **The reference init collapses the model on non-negative data.** `svd_init`
+   builds factor 1 from `sqrt|X|` and factor 2 from `sign(X)·sqrt|X|` — the same
+   matrix when `X ≥ 0`. The loss is symmetric under swapping the factor pairs, so
+   Adam keeps them equal *exactly*, for all 2000 epochs, and the model degenerates
+   to `X ≈ M∘M`. Measured on 128cat at r=10: reference init **0.16172** (no better
+   than rank-10 SVD at *half* the storage, 0.16140); with one line of
+   symmetry-breaking noise, **0.10394** — which **beats matched-storage SVD(20) at
+   0.11047**. So on images the method does win once the init is fixed.
+   `docs/DECISIONS.md` §29, `docs/THEORY.md` §3.
+2. **Dimension counting predicts the matched-storage loss at the paper's own
+   ranks, without any spectral argument.** `dim 𝓗_r = (2r−1)(m+n) − 2r² + 1`
+   (verified by Jacobian rank on 8 cases), against `dim 𝓛_{2r} = 2r(m+n) − 4r²`.
+   The difference is negative below `r* = √((m+n−1)/2)` — 16.0 for 256×256, 12.0
+   for 144×144. **Table 9 runs r=10 on 144×144, below threshold.**
+   `docs/THEORY.md` §1.
+
+So "spectra decay fast, nothing left to capture" is not the mechanism: at r=25 on
+128mri the Prop 3.5 floor on `𝓗_25` is **0** while HadNet returns 0.12036, above
+matched-storage SVD. The room is there and unused. What is actually going on is a
+dominated dimension below `r*` plus a solver that does not reach the model's limit
+(`docs/DECISIONS.md` §30).
 
 *An earlier version of this section claimed the advantage was a
 parameter-budget artifact in general. That was measured on two images only and

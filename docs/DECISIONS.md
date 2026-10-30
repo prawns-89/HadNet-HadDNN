@@ -756,3 +756,103 @@ video it is the only option, and it is now a much cheaper one.
 **Credit:** the shifted-boundary idea came from the user, on the reasoning that
 the chunking speedup left budget to spend on multiple passes. Correct, and the
 first version failed only on the Adam-restart detail.
+
+---
+
+## 29. The reference init collapses the model on non-negative data -- FOUND, 35.7% free
+
+Formal statements and proofs: `THEORY.md` Sec. 3. This section is the
+measurement record.
+
+`svd_init` builds factor 1 from `sqrt|X|` and factor 2 from `sign(X)*sqrt|X|`.
+**For `X >= 0` those are the same matrix**, so `M1 == M2` at init. The loss is
+symmetric under swapping the two factor pairs, so equal parameters get equal
+gradients -- and Adam, having equal moment estimates too, keeps them equal
+forever. The model degenerates to `X ~ M o M`.
+
+`128cat.png` grayscale 256x256, `r=10`, Adam `lr=0.1`, 2000 epochs, float64:
+
+| epoch | 0 | 10 | 100 | 500 | 1999 |
+|---|---|---|---|---|---|
+| rel. err | 0.16798 | 0.22222 | 0.16173 | 0.16172 | 0.16172 |
+| `\|\|M1-M2\|\|/\|\|M1\|\|` | **0** | **0** | **0** | **0** | **0** |
+
+Not approximately zero -- exactly zero, to machine precision, for 2000 epochs.
+With `1e-2` relative noise added to factor 2 at init, the asymmetry grows
+0.014 -> 0.056 -> 0.548 -> 0.705 -> 0.740 and the error drops to **0.10394**.
+
+| | rel. error |
+|---|---|
+| HadNet r=10, reference init | 0.16172 |
+| SVD r=10, **half the storage** | 0.16140 |
+| analytic `M o M` at rank 10 | 0.16798 |
+| **HadNet r=10 + symmetry break** | **0.10394** |
+| SVD r=20, matched storage | 0.11047 |
+
+**Two consequences.** With the published init, HadNet at r=10 is no better than
+a rank-10 SVD using half the storage. Breaking the symmetry is worth **35.7%**
+and takes it past matched-storage SVD by 5.9%.
+
+**The centring control.** Mean-centring the same image makes `sign(X)`
+non-trivial, so the reference init breaks the symmetry for free:
+
+| target / init | asym @init | asym @end | HadNet | SVD(2r) | |
+|---|---|---|---|---|---|
+| raw `X >= 0`, reference init | **0** | **0** | 0.16172 | 0.11047 | loses |
+| raw `X >= 0`, + break `1e-2` | 6.76e-03 | 7.40e-01 | 0.10394 | 0.11047 | **wins** |
+| mean-centred, reference init | **1.338** | 1.470 | 0.27046 | 0.28641 | **wins** |
+
+Identical pixels, one additive shift, and the verdict against matched-storage
+SVD flips. The spectral explanation in `RESULTS.md` finding 1 cannot survive
+this. (Absolute errors differ because centring shrinks `||X||`; compare only
+within a row.)
+
+**Not yet established.** The benchmark scripts add `0.01*randn` before fitting,
+so the real targets have negative entries and the init is not *exactly*
+symmetric. Whether that escapes within 2000 epochs decides whether the paper's
+tables are affected or merely fragile. The measurement above used clean data.
+
+**Credit:** the mechanism was already written down in
+`real-world/stiefel_hadamard.py:38-40` and exposed as `break_symmetry`; it had
+never been measured against the reference path or recorded in the docs.
+
+---
+
+## 30. Planted recovery -- no solver reaches a solution it was handed
+
+Formal statements: `THEORY.md` Sec. 4. Construct `X = (A1 B1) o (A2 B2)` with
+known rank `r0`, so a zero-error solution exists at `r = r0` by construction,
+then fit cold. 64x64, float64, `r0 = 4`.
+
+| solver | r=4 | r=8 |
+|---|---|---|
+| Adam, random init (best of 4) | 3.69e-1 | 1.95e-1 |
+| Adam, repo sqrt-SVD init | 3.65e-1 | 1.31e-1 |
+| Stiefel heavy ball, svd init | 3.69e-1 | 1.41e-1 |
+| Stiefel heavy ball, random init (best of 3) | 3.38e-1 | 1.66e-1 |
+
+Four solvers, same wrong answer, on a problem whose optimum is 0. Started **at**
+the planted point, every solver returns 0.0e+00 and stays -- so the solution is
+a stable fixed point and the failure is in reaching it.
+
+Ruled out as causes, each by measurement:
+
+| candidate | verdict |
+|---|---|
+| random init | no -- the repo's svd init is no better |
+| the solver | no -- Adam and Stiefel agree to two digits |
+| unsquared vs squared loss | no -- ratios 1.00 to 4 s.f. in 8 of 12 cells |
+| spectral conditioning | no -- the cond-107 family fits *best* |
+
+What does predict it: **entrywise kurtosis** (5.8 -> 0.109; 13.6/14.6 -> ~0.37)
+and **rank headroom** (`nonneg`, svd init: 1.09e-1 at r=4 -> 1.26e-2 at r=8,
+**8.7x**, with `D = 0` for both).
+
+The `nonneg` row is partly Sec. 29 -- that family is non-negative, so svd init
+collapses there. The `gaussian` and `orth` families have mixed signs, no
+collapse, and their ~0.37 is a separate landscape failure. Two mechanisms.
+
+**Why it matters.** No paper in this literature (Ciaperoni et al. 2024, Wertz
+et al. 2025, Panchal et al. 2026) tests recovery against a known answer. Every
+published comparison may be ranking solvers rather than models, and nothing
+currently distinguishes the two.
